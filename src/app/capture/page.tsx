@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 
-import { ReceiptCapture } from "@/components/ReceiptCapture";
+import { AddExpense } from "@/components/AddExpense";
 import { formatMonthLong, normaliseMonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata = { title: "Add a receipt - Budget" };
+export const metadata = { title: "Add an expense - Budget" };
 
 export default async function CapturePage({
   searchParams,
@@ -23,14 +23,15 @@ export default async function CapturePage({
   return (
     <div className="space-y-5">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">Add a receipt</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Add an expense</h1>
         <p className="text-sm text-ink-secondary">
-          Photograph the slip or pick a PDF. It gets read for you, and you confirm
-          before anything is saved to {formatMonthLong(monthKey)}.
+          Photograph a slip and it gets read for you, or type it in yourself.
+          Either way you confirm before anything is saved to{" "}
+          {formatMonthLong(monthKey)}.
         </p>
       </header>
 
-      <ReceiptCapture monthKey={monthKey} userId={user.id} />
+      <AddExpense monthKey={monthKey} userId={user.id} />
     </div>
   );
 }

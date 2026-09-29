@@ -11,7 +11,8 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/**/*.test.ts\"",
     "test:db": "./supabase/tests/run.sh",
-    "try:extract": "tsx --env-file-if-exists=.env.local scripts/try-extract.mts"
+    "try:extract": "tsx --env-file-if-exists=.env.local scripts/try-extract.mts",
+    "compare:models": "tsx --env-file-if-exists=.env.local scripts/compare-models.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

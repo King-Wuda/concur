@@ -10,6 +10,10 @@ sessions, and still exportable to Excel when you want a copy.
 
 ## What it does
 
+- **Two ways in.** Photograph a slip and have it read for you, or type the
+  expense yourself — cash, a transfer, anything with no receipt worth keeping.
+  Both routes end in the same confirmation form, so a typed expense and a
+  scanned one are the same kind of thing once saved, line items and all.
 - **Scan a receipt.** Photograph a slip or pick a PDF. A vision model extracts
   the store, date, total and every individual line item, proposes a category,
   and hands you a draft to check. Nothing is saved until you confirm it.
@@ -42,7 +46,7 @@ sessions, and still exportable to Excel when you want a copy.
 |---|---|
 | Framework | Next.js (App Router) on Vercel |
 | Database, storage, auth | Supabase |
-| Receipt reading | Claude (`claude-opus-5-5`) with structured outputs |
+| Receipt reading | Claude (`claude-sonnet-5-5`) with structured outputs |
 | Charts | Recharts |
 | Export | ExcelJS |
 
@@ -78,6 +82,7 @@ Copy `.env.example` to `.env.local` and fill it in:
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_...`; older projects call this the anon key, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` still works) |
 | `OWNER_EMAIL` | The email of the one account this app signs in as (see step 3). No `NEXT_PUBLIC_` prefix, so it never reaches the browser |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
+| `RECEIPT_MODEL` | Optional. Overrides the model receipts are read with; see below |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your domain in production |
 
 The Anthropic key is only ever read server-side, in `/api/extract`, and the
@@ -147,6 +152,30 @@ A category is over budget when its actual exceeds its budget, including when the
 budget is zero. Spending in a category you budgeted nothing for is over by the
 full amount, which is the honest reading and surfaces forgotten budgets.
 
+## Which model reads receipts
+
+`claude-sonnet-5-5`, chosen by measurement rather than reputation. Reading a
+till slip is mostly transcription, not reasoning, so the extra capability of a
+larger model has little to bite on. Run `npm run compare:models` to see for
+yourself — it puts the bundled fixtures through several models and checks them
+against the rules from the brief:
+
+| Model | Checks passed | Per receipt | 100 receipts |
+|---|---|---|---|
+| Claude Opus 5.5 | 7/7 | 7.3s | $2.48 |
+| **Claude Sonnet 5.5** | **7/7** | **4.9s** | **$1.13** |
+| Claude Haiku 4.5 | 6/7 | 3.4s | $0.34 |
+
+Sonnet matches Opus on every stated rule, faster and at under half the price.
+Haiku is cheaper again and would be tempting, but it stopped netting a basket
+discount off the item it belonged to — which is the out-of-pocket rule this app
+exists to get right, so the saving costs the wrong thing.
+
+`RECEIPT_MODEL` overrides the default without a code change, so a newer model
+can be tried against the fixtures and kept or dropped on the evidence. Not every
+model accepts an effort level — Haiku 4.5 rejects the parameter outright — so it
+is only sent where it is understood.
+
 ## Notes
 
 - **Currency.** Everything is rand, so there is no currency column anywhere.
@@ -181,5 +210,6 @@ npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
 npm test           # unit tests for the money, month, aggregation and export logic
 npm run test:db    # applies the migrations to a throwaway Postgres and checks the RLS policies
-npm run try:extract # reads the bundled sample receipts with the real model (spends a cent or two)
+npm run try:extract    # reads the bundled sample receipts with the real model (spends a cent or two)
+npm run compare:models # scores several models on the fixtures, with cost and latency
 ```

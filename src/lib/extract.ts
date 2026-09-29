@@ -12,7 +12,19 @@ import type { ExtractedReceipt } from "@/lib/types";
  * proposal until the user confirms it in the review screen.
  */
 
-const MODEL = "claude-opus-5-5";
+/**
+ * Which model reads receipts.
+ *
+ * Sonnet 5.5 rather than Opus: it is half the price, and on a receipt the work
+ * is reading printed numbers off an image, not reasoning - a task where the
+ * extra capability has little to bite on. RECEIPT_MODEL overrides it without a
+ * code change, so a different model can be tried against the fixtures in
+ * fixtures/receipts/ and kept or dropped on the evidence.
+ */
+const MODEL = process.env.RECEIPT_MODEL || "claude-sonnet-5-5";
+
+/** Opus, Sonnet 5+ and Fable take an effort level; Haiku 4.5 rejects it. */
+const SUPPORTS_EFFORT = /^claude-(opus|fable|mythos|sonnet-5)/;
 
 export const SUPPORTED_IMAGE_TYPES = [
   "image/jpeg",
@@ -58,7 +70,7 @@ const LineItemSchema = z.object({
     .describe("Category for this individual line, usually the same as the receipt category."),
 });
 
-const ReceiptSchema = z.object({
+export const ReceiptSchema = z.object({
   store_name: z
     .string()
     .describe(
@@ -94,7 +106,7 @@ const ReceiptSchema = z.object({
     ),
 });
 
-const SYSTEM_PROMPT = `You read South African till slips, invoices, and payment
+export const SYSTEM_PROMPT = `You read South African till slips, invoices, and payment
 screenshots and turn them into structured data for a personal monthly budget.
 
 All amounts are South African Rand (ZAR). Return plain numbers with no currency
@@ -213,6 +225,8 @@ function documentBlock(
 export type ExtractInput = {
   base64: string;
   mimeType: SupportedMimeType;
+  /** Overrides RECEIPT_MODEL for one call; used when comparing models. */
+  model?: string;
   /**
    * The month being worked on, as "YYYY-MM". Used only as a hint for receipts
    * that print an ambiguous or partial date.
@@ -224,6 +238,7 @@ export async function extractReceipt({
   base64,
   mimeType,
   monthHint,
+  model = MODEL,
 }: ExtractInput): Promise<ExtractedReceipt> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -239,11 +254,14 @@ export async function extractReceipt({
   let message;
   try {
     message = await client().messages.parse({
-      model: MODEL,
+      model,
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       output_config: {
-        effort: "medium",
+        // Not every model takes an effort level - Haiku 4.5 rejects the
+        // parameter outright - so it is only sent where it is understood,
+        // which keeps RECEIPT_MODEL free to name any current model.
+        ...(SUPPORTS_EFFORT.test(model) ? { effort: "medium" as const } : {}),
         format: zodOutputFormat(ReceiptSchema),
       },
       messages: [

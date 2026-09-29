@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   clampDateToMonth,
+  defaultDateInMonth,
   currentMonthKey,
   dateToMonthKey,
   formatMonthLong,
@@ -47,4 +48,14 @@ test("month names are fixed, not locale data", () => {
 test("a receipt dated outside its month is pulled back into it", () => {
   assert.equal(clampDateToMonth("2026-09-14", "2026-09"), "2026-09-14");
   assert.equal(clampDateToMonth("2026-08-31", "2026-09"), "2026-09-01");
+});
+
+test("a typed expense defaults to today, or the 1st for a past month", () => {
+  const someDay = new Date(2026, 8, 14); // 14 September 2026, local time
+  assert.equal(defaultDateInMonth("2026-09", someDay), "2026-09-14");
+  // Catching up on an earlier month: the 1st, not a date outside the month.
+  assert.equal(defaultDateInMonth("2026-08", someDay), "2026-08-01");
+  assert.equal(defaultDateInMonth("2026-10", someDay), "2026-10-01");
+  // Single digits are padded, so the value is a valid date input.
+  assert.equal(defaultDateInMonth("2026-09", new Date(2026, 8, 3)), "2026-09-03");
 });

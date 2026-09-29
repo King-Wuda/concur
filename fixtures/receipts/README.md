@@ -22,31 +22,37 @@ chromium --headless --screenshot=till-slip.png --window-size=520,640 \
 They are synthetic: the stores are real chains, but the transaction details,
 card digits and VAT number are invented.
 
-## What a good run looks like
+## What is checked, and what deliberately is not
 
-Recorded from a real run, as the behaviour to compare against if the prompt in
-`src/lib/extract.ts` is ever changed.
+`npm run compare:models` runs these through several models and reports named
+checks. Only rules the brief actually states are asserted:
 
-**`till-slip.png`** — total `R537.26`, not the `R787.26` printed on the slip.
-The gift card comes back as its own `-R250.00` line, the Xtra Savings discount
-is netted off the mince, and the subtotal, VAT and change rows are left out. The
-nappies and the Purity are filed under Lily rather than Groceries, and the notes
-field says so, so it can be corrected in the review screen if that is wrong:
+| Fixture | Checked |
+|---|---|
+| `till-slip.png` | Total is the **R537.26 paid**, not the R787.26 printed · nappies are Lily · the basket discount is netted off the mince (R104.39) · no subtotal, VAT or change row is treated as a line item |
+| `uber-history.png` | Total is R693.30 · trips are **Transport** (R350.30) · the KFC and Pizza Perfect orders are **Chill** (R343.00) |
 
-```
-Groceries      R129.33
-Lily           R407.93
-TOTAL          R537.26   (reconciles with the receipt total)
-```
+**The Purity baby food is deliberately not checked.** Tinned baby food bought at
+a supermarket is defensibly Groceries and defensibly Lily, and models pick
+differently between runs — including the same model twice. An earlier version of
+this compared whole category maps against one model's output and so reported
+that judgement call as a failure, which measured agreement with a guess rather
+than correctness. If a check here ever fails, look at whether the receipt is
+genuinely ambiguous before treating it as a regression.
 
-**`uber-history.png`** — one screenshot, split down the middle by the rule that
-matters: the trips are Transport, the food delivery is Chill.
+## Measured
 
-```
-Transport      R350.30    3 UberX trips
-Chill          R343.00    Pizza Perfect + KFC Streetwise
-TOTAL          R693.30   (reconciles with the receipt total)
-```
+Last run, on the checks above:
 
-Reading a receipt took 5-12 seconds, well inside the 60-second limit on
-`/api/extract`.
+| Model | Checks | Per receipt | 100 receipts |
+|---|---|---|---|
+| Claude Opus 5.5 | 7/7 | 7.3s | $2.48 |
+| **Claude Sonnet 5.5** (default) | **7/7** | **4.9s** | **$1.13** |
+| Claude Haiku 4.5 | 6/7 | 3.4s | $0.34 |
+
+Sonnet matches Opus on every stated rule, faster and at under half the cost.
+Haiku is cheaper again but stopped netting the basket discount off the mince —
+which is exactly the out-of-pocket rule this app exists to get right, so the
+saving is not worth it.
+
+Set `RECEIPT_MODEL` to try another model without a code change.

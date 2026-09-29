@@ -1,13 +1,13 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { saveReceipt } from "@/app/actions";
-import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
-import { CATEGORIES, type Category } from "@/lib/categories";
-import { formatRand, parseRand, round2, sum } from "@/lib/money";
-import { formatMonthLong, monthKeyToDate, type MonthKey } from "@/lib/month";
+import {
+  ExpenseForm,
+  emptyExpense,
+  type ExpenseValues,
+} from "@/components/ExpenseForm";
+import { monthKeyToDate, type MonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/client";
 import type { ExtractedReceipt } from "@/lib/types";
 
@@ -17,10 +17,11 @@ import type { ExtractedReceipt } from "@/lib/types";
  *
  * The file goes straight from the browser to private storage, and only its path
  * is sent to the server for reading, which keeps large photos out of the
- * serverless request body.
+ * serverless request body. Once a draft exists, the confirming is done by the
+ * same form that manual entry uses.
  */
 
-type Stage = "idle" | "uploading" | "reading" | "review" | "saving";
+type Stage = "idle" | "uploading" | "reading" | "review";
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 2000;
@@ -32,7 +33,6 @@ export function ReceiptCapture({
   monthKey: MonthKey;
   userId: string;
 }) {
-  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<Stage>("idle");
@@ -42,16 +42,12 @@ export function ReceiptCapture({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPdf, setIsPdf] = useState(false);
   const [imagePath, setImagePath] = useState<string | null>(null);
-  const [rawExtraction, setRawExtraction] = useState<ExtractedReceipt | null>(null);
+  const [extraction, setExtraction] = useState<ExtractedReceipt | null>(null);
+  const [draft, setDraft] = useState<ExpenseValues>(() => emptyExpense(monthKey));
+  // Bumped for each new draft, so the form remounts with the new values.
+  const [draftKey, setDraftKey] = useState(0);
 
-  const [storeName, setStoreName] = useState("");
-  const [date, setDate] = useState(monthKeyToDate(monthKey));
-  const [total, setTotal] = useState("");
-  const [category, setCategory] = useState<Category>("Groceries");
-  const [note, setNote] = useState("");
-  const [items, setItems] = useState<DraftLineItem[]>([]);
-
-  const busy = stage === "uploading" || stage === "reading" || stage === "saving";
+  const busy = stage === "uploading" || stage === "reading";
 
   function reset() {
     setStage("idle");
@@ -61,13 +57,8 @@ export function ReceiptCapture({
     setPreviewUrl(null);
     setIsPdf(false);
     setImagePath(null);
-    setRawExtraction(null);
-    setStoreName("");
-    setDate(monthKeyToDate(monthKey));
-    setTotal("");
-    setCategory("Groceries");
-    setNote("");
-    setItems([]);
+    setExtraction(null);
+    setDraft(emptyExpense(monthKey));
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -117,88 +108,25 @@ export function ReceiptCapture({
         );
       }
 
-      applyDraft(payload.receipt);
+      setExtraction(payload.receipt);
+      setDraft(toDraft(payload.receipt, monthKey));
+      setDraftKey((key) => key + 1);
       setStage("review");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Something went wrong.");
-      // If the file made it to storage, drop into the review form anyway so the
+      // If the file made it to storage, drop into the form anyway so the
       // details can be typed by hand rather than starting the upload again.
-      setStage(uploadedPath ? "review" : "idle");
+      if (uploadedPath) {
+        setDraft(emptyExpense(monthKey));
+        setDraftKey((key) => key + 1);
+        setStage("review");
+      } else {
+        setStage("idle");
+      }
     }
   }
 
-  function applyDraft(receipt: ExtractedReceipt) {
-    setRawExtraction(receipt);
-    setStoreName(receipt.store_name);
-    setDate(receipt.date ?? monthKeyToDate(monthKey));
-    setTotal(receipt.total ? String(receipt.total) : "");
-    setCategory(receipt.category);
-    setNote("");
-    setItems(
-      receipt.line_items.map((item, index) => ({
-        key: `${index}-${item.item_name}`,
-        item_name: item.item_name,
-        amount: String(item.amount),
-        quantity: item.quantity === null ? "" : String(item.quantity),
-        category: item.category,
-      })),
-    );
-  }
-
-  /** Re-categorising the receipt re-homes items that still match the old one. */
-  function changeCategory(next: Category) {
-    setItems((current) =>
-      current.map((item) => (item.category === category ? { ...item, category: next } : item)),
-    );
-    setCategory(next);
-  }
-
-  const itemsTotal = sum(items.map((item) => parseRand(item.amount)));
-  const parsedTotal = parseRand(total);
-  const difference = round2(parsedTotal - itemsTotal);
-
-  async function handleSave(andAnother: boolean) {
-    setError(null);
-    setStage("saving");
-
-    const result = await saveReceipt({
-      monthKey,
-      store_name: storeName.trim() || "Unknown store",
-      date,
-      total: parsedTotal,
-      category,
-      note: note.trim() || null,
-      image_path: imagePath,
-      raw_extraction: rawExtraction,
-      line_items: items
-        .filter((item) => item.item_name.trim().length > 0)
-        .map((item) => ({
-          item_name: item.item_name.trim(),
-          amount: parseRand(item.amount),
-          quantity: item.quantity.trim() ? parseRand(item.quantity) : null,
-          category: item.category,
-        })),
-    });
-
-    if (!result.ok) {
-      setError(result.error);
-      setStage("review");
-      return;
-    }
-
-    if (andAnother) {
-      const saved = storeName.trim() || "Receipt";
-      reset();
-      setSavedMessage(`${saved} saved. Ready for the next one.`);
-      router.refresh();
-      return;
-    }
-
-    router.push(`/?m=${monthKey}`);
-    router.refresh();
-  }
-
-  if (stage === "idle" || stage === "uploading" || stage === "reading") {
+  if (stage !== "review") {
     return (
       <div className="space-y-4">
         {savedMessage && (
@@ -241,7 +169,7 @@ export function ReceiptCapture({
           />
         </label>
 
-        {(stage === "uploading" || stage === "reading") && (
+        {busy && (
           <p className="text-center text-sm text-ink-muted" role="status">
             {stage === "reading"
               ? "This usually takes a few seconds."
@@ -259,26 +187,44 @@ export function ReceiptCapture({
   }
 
   return (
-    <div className="space-y-4">
-      {rawExtraction?.notes && (
-        <p
-          className="card p-3 text-sm"
-          style={{ borderColor: "var(--warning)" }}
-          role="status"
-        >
-          <strong className="font-semibold">Worth a look: </strong>
-          {rawExtraction.notes}
-        </p>
-      )}
-
-      {rawExtraction && rawExtraction.confidence !== "high" && (
-        <p className="text-sm text-ink-secondary">
-          Read with {rawExtraction.confidence} confidence — check the amounts below.
-        </p>
-      )}
-
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-        {previewUrl && (
+    <ExpenseForm
+      key={draftKey}
+      monthKey={monthKey}
+      initial={draft}
+      imagePath={imagePath}
+      rawExtraction={extraction}
+      submitLabel="Save receipt"
+      secondaryAction={{ label: "Start over", onClick: reset }}
+      onSavedAndContinue={(name) => {
+        reset();
+        setSavedMessage(`${name} saved. Ready for the next one.`);
+      }}
+      notice={
+        <>
+          {error && (
+            <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
+              {error}
+            </p>
+          )}
+          {extraction?.notes && (
+            <p
+              className="card p-3 text-sm"
+              style={{ borderColor: "var(--warning)" }}
+              role="status"
+            >
+              <strong className="font-semibold">Worth a look: </strong>
+              {extraction.notes}
+            </p>
+          )}
+          {extraction && extraction.confidence !== "high" && (
+            <p className="text-sm text-ink-secondary">
+              Read with {extraction.confidence} confidence — check the amounts below.
+            </p>
+          )}
+        </>
+      }
+      preview={
+        previewUrl ? (
           <div className="card overflow-hidden">
             {isPdf ? (
               <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-ink-secondary">
@@ -303,130 +249,30 @@ export function ReceiptCapture({
               />
             )}
           </div>
-        )}
-
-        <div className="space-y-4">
-          <div className="card space-y-3 p-4">
-            <div className="space-y-1.5">
-              <label htmlFor="store" className="text-sm font-medium">
-                Store
-              </label>
-              <input
-                id="store"
-                className="field"
-                value={storeName}
-                onChange={(event) => setStoreName(event.target.value)}
-                placeholder="Checkers Hyper"
-              />
-            </div>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label htmlFor="date" className="text-sm font-medium">
-                  Date
-                </label>
-                <input
-                  id="date"
-                  type="date"
-                  className="field"
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="total" className="text-sm font-medium">
-                  Total paid
-                </label>
-                <input
-                  id="total"
-                  className="field field-money"
-                  inputMode="decimal"
-                  value={total}
-                  onChange={(event) => setTotal(event.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="category" className="text-sm font-medium">
-                Category
-              </label>
-              <select
-                id="category"
-                className="field"
-                value={category}
-                onChange={(event) => changeCategory(event.target.value as Category)}
-              >
-                {CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="note" className="text-sm font-medium">
-                Note <span className="font-normal text-ink-muted">(optional)</span>
-              </label>
-              <input
-                id="note"
-                className="field"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Paid partly with a gift card"
-              />
-            </div>
-          </div>
-
-          <LineItemEditor
-            items={items}
-            onChange={setItems}
-            fallbackCategory={category}
-            itemsTotal={itemsTotal}
-            difference={difference}
-          />
-
-          {error && (
-            <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void handleSave(false)}
-            >
-              {stage === "saving" ? "Saving..." : "Save receipt"}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void handleSave(true)}
-            >
-              Save and add another
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={reset}>
-              Start over
-            </button>
-          </div>
-
-          <p className="text-xs text-ink-muted">
-            Saving to {formatMonthLong(monthKey)} · {formatRand(parsedTotal)} total
-          </p>
-        </div>
-      </div>
-    </div>
+        ) : null
+      }
+    />
   );
 }
 
 /* -------------------------------------------------------------------------- */
+
+function toDraft(receipt: ExtractedReceipt, monthKey: MonthKey): ExpenseValues {
+  return {
+    storeName: receipt.store_name,
+    date: receipt.date ?? monthKeyToDate(monthKey),
+    total: receipt.total ? String(receipt.total) : "",
+    category: receipt.category,
+    note: "",
+    items: receipt.line_items.map((item, index) => ({
+      key: `${index}-${item.item_name}`,
+      item_name: item.item_name,
+      amount: String(item.amount),
+      quantity: item.quantity === null ? "" : String(item.quantity),
+      category: item.category,
+    })),
+  };
+}
 
 type Prepared = { blob: Blob; mimeType: string; extension: string };
 
