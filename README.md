@@ -54,9 +54,14 @@ supabase link --project-ref <your-project-ref>
 supabase db push
 ```
 
-`0001_init.sql` creates the tables and locks every one of them down with row
-level security. `0002_storage.sql` creates the private `receipts` bucket and its
-policies. Nothing is readable without a session that owns the row.
+`0001_init.sql` creates the tables, grants the `authenticated` role access to
+them, and locks every one of them down with row level security.
+`0002_storage.sql` creates the private `receipts` bucket and its policies.
+Nothing is readable without a session that owns the row.
+
+The policies are the only thing keeping one person's receipts away from
+another's, so they are tested rather than trusted — see
+[`supabase/tests/`](supabase/tests/README.md), or run `npm run test:db`.
 
 ### 2. Environment
 
@@ -64,12 +69,15 @@ Copy `.env.example` to `.env.local` and fill it in:
 
 | Variable | Where it comes from |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API Keys |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_...`; older projects call this the anon key, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` still works) |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your domain in production |
 
-The Anthropic key is only ever read server-side, in `/api/extract`.
+The Anthropic key is only ever read server-side, in `/api/extract`. The
+publishable key is meant to be sent to the browser and grants nothing on its
+own — row level security decides what a request can reach. Never put the
+secret/service-role key in here; it bypasses row level security entirely.
 
 ### 3. Run it
 
@@ -136,4 +144,5 @@ npm run build      # production build
 npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
 npm test           # unit tests for the money, month, aggregation and export logic
+npm run test:db    # applies the migrations to a throwaway Postgres and checks the RLS policies
 ```

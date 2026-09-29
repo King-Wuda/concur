@@ -150,6 +150,24 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
+-- Table privileges
+--
+-- Supabase's default privileges usually cover this, but granting explicitly
+-- makes the migration self-contained: without it the app fails with
+-- "permission denied for table months" rather than an empty result. The
+-- policies below are what actually decide which rows a grant can reach.
+-- ---------------------------------------------------------------------------
+grant usage on schema public to authenticated;
+
+grant select, insert, update, delete on
+  public.months,
+  public.budgets,
+  public.receipts,
+  public.line_items,
+  public.fixed_expenses
+to authenticated;
+
+-- ---------------------------------------------------------------------------
 -- Row level security: a user only ever sees their own rows
 -- ---------------------------------------------------------------------------
 alter table public.months          enable row level security;

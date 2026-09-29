@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test \"tests/**/*.test.ts\""
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "test:db": "./supabase/tests/run.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",
