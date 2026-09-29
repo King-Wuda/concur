@@ -95,7 +95,11 @@ signups in Supabase → Authentication → Providers once you have your account.
 ### 4. Deploy
 
 Import the repository on Vercel, add the same four environment variables, and
-deploy. Then add your Vercel URL to Supabase → Authentication → URL
+deploy. `vercel.json` pins the framework preset to Next.js — without it, a
+project imported as "Other" builds fine and then fails with *No Output
+Directory named "public" found*, because Vercel goes looking for a static site
+instead of picking up the Next.js build. If you hit that, also check Project
+Settings → Build & Deployment and clear any Output Directory override. Then add your Vercel URL to Supabase → Authentication → URL
 Configuration, both as the Site URL and as a redirect URL
 (`https://your-app.vercel.app/auth/callback`), or magic links will bounce.
 
