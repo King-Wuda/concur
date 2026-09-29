@@ -30,3 +30,15 @@ function required(name: string, value: string | undefined): string {
   }
   return value;
 }
+
+/**
+ * The single account this app signs in as.
+ *
+ * This is a personal budget with exactly one user, so the login screen asks
+ * for a password and nothing else - the email is supplied here rather than
+ * typed. It stays server-side (no NEXT_PUBLIC_ prefix) so the address is never
+ * shipped to the browser.
+ */
+export function ownerEmail(): string {
+  return required("OWNER_EMAIL", process.env.OWNER_EMAIL);
+}

@@ -31,6 +31,11 @@ sessions, and still exportable to Excel when you want a copy.
 - **Excel export.** One month, or every month as a tab each, mirroring the old
   workbook, plus flat sheets of receipts and line items for filtering.
 
+- **One door.** A single account, reached with a password and nothing else —
+  no sign-up page, no email round-trip. Every table is still scoped to that
+  account's id and guarded by row level security, so the database would keep
+  someone else's rows separate even if a second account ever existed.
+
 ## Stack
 
 | Piece | Choice |
@@ -71,6 +76,7 @@ Copy `.env.example` to `.env.local` and fill it in:
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API Keys |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase → Project Settings → API Keys (`sb_publishable_...`; older projects call this the anon key, and `NEXT_PUBLIC_SUPABASE_ANON_KEY` still works) |
+| `OWNER_EMAIL` | The email of the one account this app signs in as (see step 3). No `NEXT_PUBLIC_` prefix, so it never reaches the browser |
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your domain in production |
 
@@ -81,27 +87,45 @@ publishable key is meant to be sent to the browser and grants nothing on its
 own — row level security decides what a request can reach. Never put the
 secret/service-role key in here; it bypasses row level security entirely.
 
-### 3. Run it
+### 3. The one account
+
+This is a personal budget with exactly one user, so there is no sign-up page:
+the login screen asks for a password and nothing else. Create that one account
+by hand, in Supabase → **Authentication** → **Users** → **Add user**:
+
+- Email: the same address as `OWNER_EMAIL`
+- Password: whatever you want to type each time
+- **Auto Confirm User: on** — otherwise the account cannot sign in until a
+  confirmation email is clicked
+
+Then close the door behind you, in Supabase → **Authentication** →
+**Sign In / Providers** → Email: turn **Allow new users to sign up** off. The
+app never calls sign-up, but this stops anyone reaching the Supabase API
+directly and making themselves an account.
+
+The password is checked by Supabase against its stored hash. It is not in this
+repository, not in an environment variable, and never compared in application
+code — so changing it means changing it in Supabase, with no redeploy. There is
+no password-reset flow by design; reset it from the same dashboard page.
+
+### 4. Run it
 
 ```bash
 npm install
 npm run dev
 ```
 
-Sign in with a magic link or with an email and password — both go through
-Supabase auth. If you want to be the only person who can sign up, turn off
-signups in Supabase → Authentication → Providers once you have your account.
+### 5. Deploy
 
-### 4. Deploy
-
-Import the repository on Vercel, add the same four environment variables, and
+Import the repository on Vercel, add the same five environment variables, and
 deploy. `vercel.json` pins the framework preset to Next.js — without it, a
 project imported as "Other" builds fine and then fails with *No Output
 Directory named "public" found*, because Vercel goes looking for a static site
 instead of picking up the Next.js build. If you hit that, also check Project
-Settings → Build & Deployment and clear any Output Directory override. Then add your Vercel URL to Supabase → Authentication → URL
-Configuration, both as the Site URL and as a redirect URL
-(`https://your-app.vercel.app/auth/callback`), or magic links will bounce.
+Settings → Build & Deployment and clear any Output Directory override.
+
+Password sign-in needs no callback URL, so there is nothing to configure under
+Supabase → Authentication → URL Configuration.
 
 ## How the month adds up
 
