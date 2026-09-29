@@ -29,8 +29,15 @@ export function isSupportedMimeType(value: string): value is SupportedMimeType {
   return (SUPPORTED_MIME_TYPES as readonly string[]).includes(value);
 }
 
-/** Thrown when the model declines the request or returns nothing usable. */
+/** Thrown when this particular file could not be turned into a receipt. */
 export class ExtractionError extends Error {}
+
+/**
+ * Thrown when the problem is the setup rather than the receipt - no API key,
+ * no credit, rate limited. These need an answer from whoever runs the app, so
+ * they are worth saying out loud rather than hiding behind "try again".
+ */
+export class ExtractionUnavailableError extends Error {}
 
 const LineItemSchema = z.object({
   item_name: z
@@ -128,12 +135,63 @@ let cachedClient: Anthropic | null = null;
 
 function client(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new ExtractionError(
-      "ANTHROPIC_API_KEY is not set, so receipts cannot be read. Add it to your environment and redeploy.",
+    throw new ExtractionUnavailableError(
+      "No Anthropic API key is configured, so receipts cannot be read. Set ANTHROPIC_API_KEY and redeploy.",
     );
   }
   cachedClient ??= new Anthropic();
   return cachedClient;
+}
+
+/**
+ * Turns an SDK error into something worth showing someone holding a phone.
+ * Most specific first: the billing and key problems are indistinguishable from
+ * a transient failure unless the message is read, and telling someone to "try
+ * again in a moment" when their account is out of credit sends them looking in
+ * entirely the wrong place.
+ */
+function describeApiError(error: unknown): Error {
+  if (error instanceof Anthropic.AuthenticationError) {
+    return new ExtractionUnavailableError(
+      "The Anthropic API key was rejected. Check ANTHROPIC_API_KEY.",
+    );
+  }
+
+  if (error instanceof Anthropic.PermissionDeniedError) {
+    return new ExtractionUnavailableError(
+      "This Anthropic API key is not allowed to use the model receipts are read with.",
+    );
+  }
+
+  if (error instanceof Anthropic.RateLimitError) {
+    return new ExtractionUnavailableError(
+      "Too many receipts at once - the Anthropic API is rate limiting. Wait a minute and try again.",
+    );
+  }
+
+  if (error instanceof Anthropic.BadRequestError) {
+    // Out of credit arrives as a 400, not a 402, and reads as a generic bad
+    // request unless the message is inspected.
+    if (/credit balance/i.test(error.message)) {
+      return new ExtractionUnavailableError(
+        "The Anthropic account is out of credit. Top it up under Plans & Billing at console.anthropic.com.",
+      );
+    }
+    return new ExtractionError(
+      "The Anthropic API rejected that file. Try a clearer photo, or a smaller one.",
+    );
+  }
+
+  if (
+    error instanceof Anthropic.InternalServerError ||
+    error instanceof Anthropic.APIConnectionError
+  ) {
+    return new ExtractionUnavailableError(
+      "Could not reach the Anthropic API just now. Try again in a moment.",
+    );
+  }
+
+  return error instanceof Error ? error : new Error(String(error));
 }
 
 function documentBlock(
@@ -178,21 +236,27 @@ export async function extractReceipt({
     .filter(Boolean)
     .join(" ");
 
-  const message = await client().messages.parse({
-    model: MODEL,
-    max_tokens: 16000,
-    system: SYSTEM_PROMPT,
-    output_config: {
-      effort: "medium",
-      format: zodOutputFormat(ReceiptSchema),
-    },
-    messages: [
-      {
-        role: "user",
-        content: [documentBlock(base64, mimeType), { type: "text", text: instruction }],
+  let message;
+  try {
+    message = await client().messages.parse({
+      model: MODEL,
+      max_tokens: 16000,
+      system: SYSTEM_PROMPT,
+      output_config: {
+        effort: "medium",
+        format: zodOutputFormat(ReceiptSchema),
       },
-    ],
-  });
+      messages: [
+        {
+          role: "user",
+          content: [documentBlock(base64, mimeType), { type: "text", text: instruction }],
+        },
+      ],
+    });
+  } catch (error) {
+    if (error instanceof ExtractionUnavailableError) throw error;
+    throw describeApiError(error);
+  }
 
   if (message.stop_reason === "refusal") {
     throw new ExtractionError(

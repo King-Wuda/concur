@@ -10,7 +10,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"tests/**/*.test.ts\"",
-    "test:db": "./supabase/tests/run.sh"
+    "test:db": "./supabase/tests/run.sh",
+    "try:extract": "tsx --env-file-if-exists=.env.local scripts/try-extract.mts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.129.0",

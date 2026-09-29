@@ -1,7 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import * as z from "zod";
 
-import { ExtractionError, extractReceipt, isSupportedMimeType } from "@/lib/extract";
+import {
+  ExtractionError,
+  ExtractionUnavailableError,
+  extractReceipt,
+  isSupportedMimeType,
+} from "@/lib/extract";
 import { isMonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
@@ -78,6 +83,12 @@ export async function POST(request: NextRequest) {
     });
     return NextResponse.json({ receipt });
   } catch (error) {
+    if (error instanceof ExtractionUnavailableError) {
+      // 503: the receipt is fine, the service behind it is not. The message is
+      // safe to show - it names the setting to change, never a key or a token.
+      return NextResponse.json({ error: error.message }, { status: 503 });
+    }
+
     if (error instanceof ExtractionError) {
       return NextResponse.json({ error: error.message }, { status: 422 });
     }

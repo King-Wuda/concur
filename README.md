@@ -74,7 +74,9 @@ Copy `.env.example` to `.env.local` and fill it in:
 | `ANTHROPIC_API_KEY` | [console.anthropic.com](https://console.anthropic.com) |
 | `NEXT_PUBLIC_SITE_URL` | `http://localhost:3000` locally, your domain in production |
 
-The Anthropic key is only ever read server-side, in `/api/extract`. The
+The Anthropic key is only ever read server-side, in `/api/extract`, and the
+account behind it needs credit — a new key with a zero balance returns a 400
+that the app surfaces as "out of credit". The
 publishable key is meant to be sent to the browser and grants nothing on its
 own — row level security decides what a request can reach. Never put the
 secret/service-role key in here; it bypasses row level security entirely.
@@ -131,10 +133,16 @@ full amount, which is the honest reading and surfaces forgotten budgets.
 - **HEIC** is not supported — Claude cannot read it. Taking a photo in the app
   gives you a JPEG; picking an existing HEIC from an iPhone library works in
   Safari, which decodes it during the downscale, but not elsewhere.
-- **Refusals.** If the model ever declines a file, `/api/extract` returns a 422
-  and you can still type the receipt in by hand. Adding server-side refusal
-  fallbacks would mean moving the call to `client.beta.messages`, which does not
-  currently expose the `parse()` helper this uses for schema validation.
+- **Failure messages.** A problem with the receipt returns 422 ("try a clearer
+  photo"); a problem with the setup returns 503 and names it — no API key, key
+  rejected, account out of credit, rate limited. The difference matters: being
+  told to "try again in a moment" when the account is out of credit sends you
+  looking in the wrong place entirely. Either way you can still type the
+  receipt in by hand.
+- **Refusals.** If the model ever declines a file, that is a 422 too. Adding
+  server-side refusal fallbacks would mean moving the call to
+  `client.beta.messages`, which does not currently expose the `parse()` helper
+  this uses for schema validation.
 
 ## Commands
 
@@ -145,4 +153,5 @@ npm run lint       # eslint
 npm run typecheck  # tsc --noEmit
 npm test           # unit tests for the money, month, aggregation and export logic
 npm run test:db    # applies the migrations to a throwaway Postgres and checks the RLS policies
+npm run try:extract # reads the bundled sample receipts with the real model (spends a cent or two)
 ```
