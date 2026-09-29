@@ -1,0 +1,41 @@
+{
+  "name": "concur",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Personal monthly budgeting app with AI receipt scanning (ZAR)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test \"tests/**/*.test.ts\"",
+    "test:db": "./supabase/tests/run.sh",
+    "try:extract": "tsx --env-file-if-exists=.env.local scripts/try-extract.mts"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.129.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.117.2",
+    "exceljs": "^4.4.0",
+    "next": "^16.3.6",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "recharts": "^3.10.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.18.0",
+    "eslint-config-next": "^16.3.6",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.0"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}
