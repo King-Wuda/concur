@@ -28,14 +28,32 @@ export async function signIn(
     return { error: "Enter your password." };
   }
 
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({
-    email: ownerEmail(),
-    password,
-  });
+  // A missing environment variable throws here rather than returning an error,
+  // and an uncaught throw in a server action renders the browser's blank
+  // "a server error occurred" page - which says nothing about what to fix, on
+  // the one screen where there is nobody signed in to read a log. Catching it
+  // turns a dead end into an instruction. The redirect stays outside: it works
+  // by throwing, and must not be swallowed here.
+  let failed: boolean;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: ownerEmail(),
+      password,
+    });
+    failed = error !== null;
+  } catch (cause) {
+    console.error("Sign-in could not be attempted", cause);
+    return {
+      error:
+        cause instanceof Error
+          ? cause.message
+          : "Sign-in is not configured. Check the environment variables.",
+    };
+  }
 
-  if (error) {
-    // Deliberately vague, and identical for every failure: there is one
+  if (failed) {
+    // Deliberately vague, and identical for every wrong attempt: there is one
     // account, so anything more specific only helps someone guessing.
     return { error: "That password is not right." };
   }

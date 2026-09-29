@@ -25,7 +25,8 @@ export function supabasePublishableKey(): string {
 function required(name: string, value: string | undefined): string {
   if (!value) {
     throw new Error(
-      `${name} is not set. Copy .env.example to .env.local and fill in your Supabase project details.`,
+      `${name} is not set. Add it to .env.local for local development, or to your ` +
+        `hosting provider's environment variables and redeploy.`,
     );
   }
   return value;
