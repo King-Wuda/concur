@@ -152,6 +152,28 @@ A category is over budget when its actual exceeds its budget, including when the
 budget is zero. Spending in a category you budgeted nothing for is over by the
 full amount, which is the honest reading and surfaces forgotten budgets.
 
+## Where the model is used, and where it is not
+
+Reading a receipt is the only thing in this app that calls a model. Typing an
+expense, editing one, setting budgets, the dashboard, the charts and the Excel
+export are all ordinary code: no model, no API key needed, no network call
+waiting on one, nothing to pay.
+
+That is not a convention to remember - `tests/ai-usage.test.ts` enforces it. It
+walks `src/` and fails if anything other than the files below reaches for the
+model, so wiring it into a second place has to be a deliberate edit to that
+list rather than something discovered later on a bill.
+
+| File | What it is allowed to do |
+|---|---|
+| `src/lib/extract.ts` | the only file that imports the SDK or reads `ANTHROPIC_API_KEY` |
+| `src/app/api/extract/route.ts` | the only caller of `extractReceipt` |
+| `src/components/ReceiptCapture.tsx` | the only caller of `/api/extract`, and only once a file has been picked |
+
+Confirmed in a browser as well as in the tests: typing an expense by hand and
+saving it makes exactly one request, the server action that writes the row, and
+none to the model.
+
 ## Which model reads receipts
 
 `claude-sonnet-5-5`, chosen by measurement rather than reputation. Reading a
