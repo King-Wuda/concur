@@ -68,15 +68,17 @@ test("only the receipt scanner calls the extract endpoint", () => {
   assert.deepEqual(callers, ["src/components/ReceiptCapture.tsx"]);
 });
 
-test("typing an expense by hand reaches no network at all", () => {
-  // These are the whole manual path: the mode switcher, the empty-form wrapper,
-  // and the shared form both routes confirm in. None of them may fetch; saving
-  // goes through a server action, which is a function call, not a request they
-  // compose themselves.
+test("typing an expense or income by hand reaches no network at all", () => {
+  // The whole hand-entry path: the mode switcher, the empty-form wrapper, the
+  // shared expense form both routes confirm in, and recording money in. None of
+  // them may fetch; saving goes through a server action, which is a function
+  // call, not a request they compose themselves.
   for (const file of [
     "src/components/ManualExpense.tsx",
     "src/components/AddExpense.tsx",
     "src/components/ExpenseForm.tsx",
+    "src/components/IncomeForm.tsx",
+    "src/components/IncomeList.tsx",
   ]) {
     const contents = FILES.find(([name]) => name === file)?.[1];
     assert.ok(contents, `${file} is missing - update this test if it moved`);

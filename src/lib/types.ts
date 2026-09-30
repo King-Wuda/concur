@@ -53,6 +53,20 @@ export type FixedExpenseRow = {
   position: number;
 };
 
+/**
+ * Money arriving during the month that is not salary: someone sending money, a
+ * refund, a side job. Carries no category - see supabase/migrations/0003.
+ */
+export type IncomeRow = {
+  id: string;
+  month_id: string;
+  source: string;
+  date: string; // "YYYY-MM-DD"
+  amount: number;
+  note: string | null;
+  created_at: string;
+};
+
 /** Everything one month needs, fetched once. */
 export type MonthSnapshot = {
   monthKey: string;
@@ -60,6 +74,7 @@ export type MonthSnapshot = {
   budgets: BudgetRow[];
   receipts: ReceiptWithItems[];
   fixedExpenses: FixedExpenseRow[];
+  income: IncomeRow[];
 };
 
 /** A draft receipt as returned by the vision model, before the user confirms. */

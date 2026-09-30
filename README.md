@@ -14,6 +14,13 @@ sessions, and still exportable to Excel when you want a copy.
   expense yourself — cash, a transfer, anything with no receipt worth keeping.
   Both routes end in the same confirmation form, so a typed expense and a
   scanned one are the same kind of thing once saved, line items and all.
+- **Money in as well as out.** Salary lives in the month's plan; anything else
+  that arrives — someone sending money, a refund, a side job — is recorded on
+  the same Add screen and raises what there is to spend. It carries no category
+  on purpose: the six categories are spending budgets, so filing money received
+  under one would pull that category's actual down, make its meter read wrong
+  and its slice of the pie chart mislead. A refund that really should come off a
+  category's spend belongs on the expense itself, as a negative line item.
 - **Scan a receipt.** Photograph a slip or pick a PDF. A vision model extracts
   the store, date, total and every individual line item, proposes a category,
   and hands you a draft to check. Nothing is saved until you confirm it.
@@ -25,8 +32,8 @@ sessions, and still exportable to Excel when you want a copy.
 - **Budget vs actual.** Set a budget per category per month and watch a meter
   fill. Anything past the budget is drawn in the critical colour and labelled
   "Over" — colour never carries that meaning on its own.
-- **Savings view.** Salary after tax minus everything out the door, and how far
-  ahead of or behind the plan the month is running.
+- **Savings view.** Everything that came in, minus everything out the door, and
+  how far ahead of or behind the plan the month is running.
 - **The summary block.** Salary, salary after tax, tithe (with a one-tap 10%),
   rent, Investec, and the subscription lines — gym, MMA, Claude, VPS, iCloud,
   Spotify — all carried over automatically when a new month starts.
@@ -144,9 +151,12 @@ meters and the export can never disagree.
   drift away from receipt totals. With it, they reconcile to the cent.
 - **Total spend** is tithe + rent + Investec + every category actual + any fixed
   expense you excluded from budgets.
-- **Left / saved** is salary after tax minus total spend.
+- **Money in** is salary after tax plus every income entry. Income never touches
+  a category, so it raises what is left without flattering any budget.
+- **Left / saved** is money in minus total spend.
 - **Ahead of plan** is the category budgets minus the category actuals — the
-  same number as `left` minus `left if the plan had held`.
+  same number as `left` minus `left if the plan had held`. It is about spending,
+  so a windfall does not make the month look disciplined.
 
 A category is over budget when its actual exceeds its budget, including when the
 budget is zero. Spending in a category you budgeted nothing for is over by the

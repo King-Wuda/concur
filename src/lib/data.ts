@@ -5,6 +5,7 @@ import { monthKeyToDate, type MonthKey } from "@/lib/month";
 import type {
   BudgetRow,
   FixedExpenseRow,
+  IncomeRow,
   MonthRow,
   MonthSnapshot,
   ReceiptWithItems,
@@ -194,7 +195,7 @@ export async function getMonthSnapshot(
 ): Promise<MonthSnapshot> {
   const month = await ensureMonth(supabase, userId, monthKey);
 
-  const [budgetsResult, receiptsResult, fixedResult] = await Promise.all([
+  const [budgetsResult, receiptsResult, fixedResult, incomeResult] = await Promise.all([
     supabase
       .from("budgets")
       .select("id, month_id, category, budgeted_amount")
@@ -213,11 +214,18 @@ export async function getMonthSnapshot(
       .select("id, month_id, name, amount, category, include_in_budget, position")
       .eq("month_id", month.id)
       .order("position"),
+    supabase
+      .from("income")
+      .select("id, month_id, source, date, amount, note, created_at")
+      .eq("month_id", month.id)
+      .order("date", { ascending: false })
+      .order("created_at", { ascending: false }),
   ]);
 
   if (budgetsResult.error) throw budgetsResult.error;
   if (receiptsResult.error) throw receiptsResult.error;
   if (fixedResult.error) throw fixedResult.error;
+  if (incomeResult.error) throw incomeResult.error;
 
   const budgets = await ensureBudgetRows(
     supabase,
@@ -237,6 +245,7 @@ export async function getMonthSnapshot(
     budgets: sortBudgets(budgets),
     receipts,
     fixedExpenses: (fixedResult.data ?? []) as FixedExpenseRow[],
+    income: (incomeResult.data ?? []) as IncomeRow[],
   };
 }
 

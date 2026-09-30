@@ -24,6 +24,10 @@ export type CategoryTotal = {
 export type MonthTotals = {
   salary: number;
   salaryAfterTax: number;
+  /** Money in beyond salary: gifts, refunds, side work. */
+  incomeTotal: number;
+  /** Everything there was to spend this month: salary after tax plus income. */
+  availableTotal: number;
   tithe: number;
   /** 10% of salary - what the tithe would be if it tracked salary exactly. */
   titheExpected: number;
@@ -48,9 +52,9 @@ export type MonthTotals = {
   /** What the plan expected to spend in total. */
   plannedSpend: number;
 
-  /** Salary after tax minus everything actually spent. */
+  /** Everything available minus everything actually spent. */
   remaining: number;
-  /** Salary after tax minus everything the plan expected to spend. */
+  /** Everything available minus everything the plan expected to spend. */
   plannedRemaining: number;
   /** How far ahead of (positive) or behind (negative) plan the month is. */
   savingsVsPlan: number;
@@ -58,8 +62,9 @@ export type MonthTotals = {
   receiptCount: number;
   overspentCategories: Category[];
   totalOverspend: number;
-  /** True once the salary-after-tax figure has been entered. */
+  /** True once anything is known to have come in. */
   hasIncome: boolean;
+  incomeCount: number;
 };
 
 export type MonthAnalysis = {
@@ -76,7 +81,7 @@ function emptyCategoryMap(): Record<Category, number> {
 }
 
 export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
-  const { month, budgets, receipts, fixedExpenses } = snapshot;
+  const { month, budgets, receipts, fixedExpenses, income } = snapshot;
 
   const actualByCategory = emptyCategoryMap();
   const budgetByCategory = emptyCategoryMap();
@@ -144,6 +149,13 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
   const investec = round2(Number(month.investec) || 0);
 
   const committedTotal = round2(tithe + rent + investec);
+
+  // Income sits outside the categories on purpose: it is money to spend, not
+  // spending, so it raises what is available rather than reducing any
+  // category's actual. A refund that should come off a category's spend belongs
+  // on the receipt itself, as a negative line item.
+  const incomeTotal = sum((income ?? []).map((row) => Number(row.amount) || 0));
+  const availableTotal = round2(salaryAfterTax + incomeTotal);
   const receiptsTotal = sum(receipts.map((r) => Number(r.total) || 0));
   const budgetTotal = sum(CATEGORIES.map((c) => budgetByCategory[c]));
 
@@ -158,6 +170,8 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
     totals: {
       salary,
       salaryAfterTax,
+      incomeTotal,
+      availableTotal,
       tithe,
       titheExpected: round2(salary * 0.1),
       rent,
@@ -170,13 +184,14 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
       totalSpend,
       budgetTotal,
       plannedSpend,
-      remaining: round2(salaryAfterTax - totalSpend),
-      plannedRemaining: round2(salaryAfterTax - plannedSpend),
+      remaining: round2(availableTotal - totalSpend),
+      plannedRemaining: round2(availableTotal - plannedSpend),
       savingsVsPlan: round2(budgetTotal - categoryActualTotal),
       receiptCount: receipts.length,
       overspentCategories: overspent.map((c) => c.category),
       totalOverspend: sum(overspent.map((c) => Math.abs(c.variance))),
-      hasIncome: salaryAfterTax > 0,
+      hasIncome: availableTotal > 0,
+      incomeCount: (income ?? []).length,
     },
   };
 }

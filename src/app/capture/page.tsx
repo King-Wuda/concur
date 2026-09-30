@@ -4,7 +4,7 @@ import { AddExpense } from "@/components/AddExpense";
 import { formatMonthLong, normaliseMonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata = { title: "Add an expense - Budget" };
+export const metadata = { title: "Add to the month - Budget" };
 
 export default async function CapturePage({
   searchParams,
@@ -23,11 +23,11 @@ export default async function CapturePage({
   return (
     <div className="space-y-5">
       <header className="space-y-1">
-        <h1 className="text-xl font-semibold tracking-tight">Add an expense</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Add to the month</h1>
         <p className="text-sm text-ink-secondary">
-          Photograph a slip and it gets read for you, or type it in yourself.
-          Either way you confirm before anything is saved to{" "}
-          {formatMonthLong(monthKey)}.
+          Photograph a slip and it gets read for you, type an expense in
+          yourself, or record money that came in. Nothing is saved to{" "}
+          {formatMonthLong(monthKey)} until you confirm it.
         </p>
       </header>
 

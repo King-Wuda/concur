@@ -67,6 +67,7 @@ async function main() {
       month: { id: "m", user_id: "u", month: "2026-09-01", salary: 0, salary_after_tax: 0, tithe: 0, rent: 0, investec: 0, notes: null },
       budgets: [],
       fixedExpenses: [],
+      income: [],
       receipts: [{
         id: "r", month_id: "m", store_name: receipt.store_name, date: receipt.date ?? "2026-09-01",
         total: receipt.total, category: receipt.category, image_path: null, note: null, created_at: "",

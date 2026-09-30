@@ -59,6 +59,13 @@ values (
   'Spotify', 69, 'Subscriptions'
 );
 
+insert into public.income (user_id, month_id, source, date, amount)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  '33333333-3333-3333-3333-333333333333',
+  'Mum', '2026-09-05', 1500
+);
+
 -- --------------------------------------------------------------------------
 -- The owner sees their own rows.
 -- --------------------------------------------------------------------------
@@ -82,6 +89,9 @@ begin
   if (select count(*) from public.fixed_expenses) <> 1 then
     raise exception 'owner cannot see their own fixed expenses';
   end if;
+  if (select count(*) from public.income) <> 1 then
+    raise exception 'owner cannot see their own income';
+  end if;
   raise notice 'PASS  owner sees their own rows';
 end $$;
 
@@ -95,7 +105,7 @@ declare
   t text;
   visible integer;
 begin
-  foreach t in array array['months', 'budgets', 'receipts', 'line_items', 'fixed_expenses']
+  foreach t in array array['months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income']
   loop
     execute format('select count(*) from public.%I', t) into visible;
     if visible <> 0 then
@@ -129,6 +139,12 @@ begin
   get diagnostics affected = row_count;
   if affected <> 0 then
     raise exception 'another user deleted % month row(s)', affected;
+  end if;
+
+  update public.income set amount = 1 where source = 'Mum';
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user updated % income row(s)', affected;
   end if;
 
   raise notice 'PASS  another user cannot update or delete';

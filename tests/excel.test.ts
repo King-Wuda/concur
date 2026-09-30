@@ -62,6 +62,17 @@ function snapshot(monthKey: string, salary: number): MonthSnapshot {
         ],
       },
     ],
+    income: [
+      {
+        id: "in1",
+        month_id: `month-${monthKey}`,
+        source: "Mum",
+        date: `${monthKey}-05`,
+        amount: 1_500,
+        note: "birthday",
+        created_at: `${monthKey}-05T10:00:00Z`,
+      },
+    ],
     fixedExpenses: [
       {
         id: "f1",
@@ -87,7 +98,7 @@ test("a single-month export has the expected sheets and figures", async () => {
 
   assert.deepEqual(
     workbook.worksheets.map((sheet) => sheet.name),
-    ["Summary", "Receipts", "Line Items", "Fixed Expenses"],
+    ["Summary", "Income", "Receipts", "Line Items", "Fixed Expenses"],
   );
 
   const summary = workbook.getWorksheet("Summary")!;
@@ -139,6 +150,7 @@ test("an all-months export gets a tab per month plus an overview", async () => {
       "Overview",
       "Aug 2026",
       "Sep 2026",
+      "All Income",
       "All Receipts",
       "All Line Items",
       "All Fixed Expenses",

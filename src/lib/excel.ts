@@ -47,6 +47,7 @@ export async function buildWorkbook(
     addMonthSheet(workbook.addWorksheet(name), snapshot, analysis);
   }
 
+  addIncomeSheet(workbook, analyses, scope);
   addReceiptSheet(workbook, analyses, scope);
   addLineItemSheet(workbook, analyses, scope);
   addFixedExpenseSheet(workbook, analyses, scope);
@@ -92,6 +93,8 @@ function addMonthSheet(sheet: Sheet, snapshot: MonthSnapshot, analysis: MonthAna
   const summaryRows: [string, number][] = [
     ["Salary", totals.salary],
     ["Salary after tax", totals.salaryAfterTax],
+    ["Other money in", totals.incomeTotal],
+    ["Total money in", totals.availableTotal],
     ["Tithe (10%)", totals.tithe],
     ["Rent", totals.rent],
     ["Investec", totals.investec],
@@ -109,7 +112,11 @@ function addMonthSheet(sheet: Sheet, snapshot: MonthSnapshot, analysis: MonthAna
   for (const [label, amount] of summaryRows) {
     const row = sheet.addRow([label, amount]);
     row.getCell(2).numFmt = RAND_FORMAT;
-    if (label === "Total spend" || label === "Left / saved") {
+    if (
+      label === "Total spend" ||
+      label === "Left / saved" ||
+      label === "Total money in"
+    ) {
       row.font = { bold: true };
     }
   }
@@ -160,6 +167,7 @@ function addOverviewSheet(
     { header: "Month", key: "month", width: 16 },
     { header: "Salary", key: "salary", width: 14 },
     { header: "Salary after tax", key: "afterTax", width: 16 },
+    { header: "Other money in", key: "income", width: 16 },
     { header: "Tithe", key: "tithe", width: 12 },
     { header: "Rent", key: "rent", width: 12 },
     { header: "Investec", key: "investec", width: 12 },
@@ -179,6 +187,7 @@ function addOverviewSheet(
       month: formatMonthShort(snapshot.monthKey),
       salary: t.salary,
       afterTax: t.salaryAfterTax,
+      income: t.incomeTotal,
       tithe: t.tithe,
       rent: t.rent,
       investec: t.investec,
@@ -195,6 +204,7 @@ function addOverviewSheet(
   money(sheet, [
     "salary",
     "afterTax",
+    "income",
     "tithe",
     "rent",
     "investec",
@@ -205,6 +215,37 @@ function addOverviewSheet(
     "left",
     "plan",
   ]);
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+function addIncomeSheet(
+  workbook: ExcelJS.Workbook,
+  analyses: { snapshot: MonthSnapshot }[],
+  scope: "month" | "all",
+) {
+  const sheet = workbook.addWorksheet(scope === "all" ? "All Income" : "Income");
+  sheet.columns = [
+    { header: "Month", key: "month", width: 12 },
+    { header: "Date", key: "date", width: 12 },
+    { header: "From", key: "source", width: 30 },
+    { header: "Amount", key: "amount", width: 14 },
+    { header: "Note", key: "note", width: 36 },
+  ];
+  styleHeaderRow(sheet, 1);
+
+  for (const { snapshot } of analyses) {
+    for (const row of snapshot.income) {
+      sheet.addRow({
+        month: snapshot.monthKey,
+        date: row.date,
+        source: row.source,
+        amount: Number(row.amount) || 0,
+        note: row.note ?? "",
+      });
+    }
+  }
+
+  money(sheet, ["amount"]);
   sheet.views = [{ state: "frozen", ySplit: 1 }];
 }
 

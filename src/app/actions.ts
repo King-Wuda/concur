@@ -386,3 +386,103 @@ export async function saveFixedExpenses(raw: FixedExpensesInput): Promise<Action
     return failure(error);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Income                                                                     */
+/* -------------------------------------------------------------------------- */
+
+const IncomeInput = z.object({
+  monthKey: MonthKeySchema,
+  source: z.string().trim().min(1).max(160),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date like 2026-09-14"),
+  amount: AmountSchema,
+  note: z.string().trim().max(500).nullable().optional(),
+});
+
+export type IncomeInput = z.input<typeof IncomeInput>;
+
+/** Records money that came in, e.g. someone sending money or a refund. */
+export async function saveIncome(raw: IncomeInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    const input = IncomeInput.parse(raw);
+    const { supabase, userId } = await session();
+    const month = await ensureMonth(supabase, userId, input.monthKey);
+
+    const inserted = await supabase
+      .from("income")
+      .insert({
+        user_id: userId,
+        month_id: month.id,
+        source: input.source,
+        // Income belongs to the month it is filed under, as receipts do.
+        date: clampDateToMonth(input.date, input.monthKey),
+        amount: round2(input.amount),
+        note: input.note ?? null,
+      })
+      .select("id")
+      .single();
+
+    if (inserted.error) throw inserted.error;
+
+    revalidateMonth();
+    return { ok: true, data: { id: inserted.data.id as string } };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+const UpdateIncomeInput = z.object({
+  id: z.string().uuid(),
+  source: z.string().trim().min(1).max(160).optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  amount: AmountSchema.optional(),
+  note: z.string().trim().max(500).nullable().optional(),
+});
+
+export type UpdateIncomeInput = z.input<typeof UpdateIncomeInput>;
+
+export async function updateIncome(raw: UpdateIncomeInput): Promise<ActionResult> {
+  try {
+    const { id, ...fields } = UpdateIncomeInput.parse(raw);
+    const { supabase, userId } = await session();
+
+    if (Object.keys(fields).length > 0) {
+      const patch = { ...fields } as Record<string, unknown>;
+      if (typeof fields.amount === "number") patch.amount = round2(fields.amount);
+
+      const { error } = await supabase
+        .from("income")
+        .update(patch)
+        .eq("id", id)
+        .eq("user_id", userId);
+      if (error) throw error;
+    }
+
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteIncome(id: string): Promise<ActionResult> {
+  try {
+    z.string().uuid().parse(id);
+    const { supabase, userId } = await session();
+
+    const { error } = await supabase
+      .from("income")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}

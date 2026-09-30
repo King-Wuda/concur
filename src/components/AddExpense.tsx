@@ -2,22 +2,25 @@
 
 import { useState } from "react";
 
+import { IncomeForm } from "@/components/IncomeForm";
 import { ManualExpense } from "@/components/ManualExpense";
 import { ReceiptCapture } from "@/components/ReceiptCapture";
 import type { MonthKey } from "@/lib/month";
 
 /**
- * Chooses how an expense gets entered. Scanning is first because it is the
- * quicker route when there is a slip in hand; typing it is there for cash, a
- * transfer, or a receipt not worth photographing.
+ * Chooses what is being recorded. Scanning is first because it is the quicker
+ * route when there is a slip in hand; typing covers cash, a transfer, or a
+ * receipt not worth photographing; money in covers the other direction, when
+ * someone sends money or a refund lands.
  *
- * Each mode keeps its own state while the other is on screen: switching across
- * to check something does not throw away a half-filled form.
+ * Each mode keeps its own state while another is on screen: switching across to
+ * check something does not throw away a half-filled form.
  */
 
 const MODES = [
   { id: "scan", label: "Scan a receipt" },
-  { id: "manual", label: "Enter it manually" },
+  { id: "manual", label: "Enter manually" },
+  { id: "income", label: "Money in" },
 ] as const;
 
 type Mode = (typeof MODES)[number]["id"];
@@ -41,8 +44,8 @@ export function AddExpense({
     <div className="space-y-4">
       <div
         role="tablist"
-        aria-label="How to add the expense"
-        className="mx-auto flex max-w-md gap-1 rounded-lg bg-sunken p-1"
+        aria-label="What to add"
+        className="mx-auto flex max-w-lg gap-1 rounded-lg bg-sunken p-1"
       >
         {MODES.map((option) => (
           <button
@@ -70,6 +73,11 @@ export function AddExpense({
       {visited.includes("manual") && (
         <div hidden={mode !== "manual"}>
           <ManualExpense monthKey={monthKey} />
+        </div>
+      )}
+      {visited.includes("income") && (
+        <div hidden={mode !== "income"}>
+          <IncomeForm monthKey={monthKey} />
         </div>
       )}
     </div>

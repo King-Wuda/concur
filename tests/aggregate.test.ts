@@ -6,6 +6,7 @@ import type { Category } from "@/lib/categories";
 import type {
   BudgetRow,
   FixedExpenseRow,
+  IncomeRow,
   LineItemRow,
   MonthSnapshot,
   ReceiptWithItems,
@@ -88,6 +89,18 @@ function fixed(
   };
 }
 
+function income(source: string, amount: number, date = "2026-09-05"): IncomeRow {
+  return {
+    id: `income-${source}`,
+    month_id: "month-1",
+    source,
+    date,
+    amount,
+    note: null,
+    created_at: "2026-09-05T10:00:00Z",
+  };
+}
+
 function snapshot(parts: Partial<MonthSnapshot> = {}): MonthSnapshot {
   return {
     monthKey: "2026-09",
@@ -95,6 +108,7 @@ function snapshot(parts: Partial<MonthSnapshot> = {}): MonthSnapshot {
     budgets: [],
     receipts: [],
     fixedExpenses: [],
+    income: [],
     ...parts,
   };
 }
@@ -295,4 +309,65 @@ test("a discount line reduces the category it belongs to", () => {
 
   assert.equal(actualFor(analysis, "Groceries"), 700);
   assert.equal(analysis.totals.receiptsTotal, 700);
+});
+
+test("money in raises what there is to spend, without touching any category", () => {
+  const analysis = analyseMonth(
+    snapshot({
+      month: month({ salary: 50_000, salary_after_tax: 38_000 }),
+      budgets: [budget("Groceries", 4_000)],
+      receipts: [receipt("r1", 3_500, "Groceries", [item("Shop", 3_500, "Groceries")])],
+      income: [income("Mum", 1_500), income("Takealot refund", 320)],
+    }),
+  );
+
+  const t = analysis.totals;
+  assert.equal(t.incomeTotal, 1_820);
+  assert.equal(t.availableTotal, 39_820);
+  assert.equal(t.incomeCount, 2);
+
+  // Spending is untouched by it: the category still shows only what was spent.
+  assert.equal(actualFor(analysis, "Groceries"), 3_500);
+  assert.equal(t.categoryActualTotal, 3_500);
+  assert.equal(t.totalSpend, 3_500);
+
+  // What is left goes up by exactly what came in.
+  assert.equal(t.remaining, 39_820 - 3_500);
+  assert.equal(t.plannedRemaining, 39_820 - 4_000);
+
+  // Being ahead of plan is about spending, so income does not flatter it.
+  assert.equal(t.savingsVsPlan, 500);
+});
+
+test("income alone counts as knowing what came in", () => {
+  const analysis = analyseMonth(snapshot({ income: [income("Side job", 900)] }));
+  assert.equal(analysis.totals.hasIncome, true);
+  assert.equal(analysis.totals.availableTotal, 900);
+  assert.equal(analysis.totals.remaining, 900);
+});
+
+test("income does not appear in any category share", () => {
+  const analysis = analyseMonth(
+    snapshot({
+      receipts: [receipt("r1", 250, "Chill", [item("Dinner", 250, "Chill")])],
+      income: [income("Mum", 5_000)],
+    }),
+  );
+
+  // The pie is a share of spend, so a big month of gifts must not shrink it.
+  assert.equal(analysis.categories.find((c) => c.category === "Chill")!.share, 100);
+  assert.equal(analysis.totals.categoryActualTotal, 250);
+});
+
+test("a month with more coming in than going out is not overspent", () => {
+  const analysis = analyseMonth(
+    snapshot({
+      month: month({ salary_after_tax: 1_000 }),
+      receipts: [receipt("r1", 1_400, "Groceries")],
+      income: [income("Mum", 800)],
+    }),
+  );
+
+  assert.equal(analysis.totals.availableTotal, 1_800);
+  assert.equal(analysis.totals.remaining, 400);
 });

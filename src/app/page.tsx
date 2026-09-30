@@ -60,10 +60,18 @@ export default async function DashboardPage({
           />
         </div>
         <StatTile
-          label="Salary after tax"
-          value={totals.salaryAfterTax}
+          label="Money in"
+          value={totals.availableTotal}
           detail={
-            totals.salary > 0 ? `${formatRand(totals.salary)} before tax` : "Not set yet"
+            totals.incomeTotal > 0
+              ? `${formatRand(totals.salaryAfterTax)} salary + ${formatRand(
+                  totals.incomeTotal,
+                )} from ${totals.incomeCount} other source${
+                  totals.incomeCount === 1 ? "" : "s"
+                }`
+              : totals.salary > 0
+                ? `${formatRand(totals.salary)} salary before tax`
+                : "Not set yet"
           }
         />
         <StatTile
@@ -127,6 +135,16 @@ export default async function DashboardPage({
           <dl className="space-y-2 text-sm">
             <SummaryRow label="Salary" value={totals.salary} />
             <SummaryRow label="Salary after tax" value={totals.salaryAfterTax} />
+            {totals.incomeTotal !== 0 && (
+              <SummaryRow
+                label="Other money in"
+                value={totals.incomeTotal}
+                detail={`${totals.incomeCount} entr${
+                  totals.incomeCount === 1 ? "y" : "ies"
+                }`}
+                tone="good"
+              />
+            )}
             <SummaryRow
               label="Tithe"
               value={totals.tithe}
