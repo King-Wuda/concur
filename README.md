@@ -75,9 +75,12 @@ them, and locks every one of them down with row level security.
 `0002_storage.sql` creates the private `receipts` bucket and its policies.
 Nothing is readable without a session that owns the row.
 
-The policies are the only thing keeping one person's receipts away from
-another's, so they are tested rather than trusted — see
-[`supabase/tests/`](supabase/tests/README.md), or run `npm run test:db`.
+**Running a migration over data you already have does not touch it.** Every one
+is additive, and `npm run test:db` proves it rather than claiming it: it seeds a
+month of realistic data, re-applies every migration over the top, then compares
+each row against what was written. The row level security policies — the only
+thing keeping one person's receipts away from another's — are checked in the
+same run. See [`supabase/tests/`](supabase/tests/README.md).
 
 ### 2. Environment
 

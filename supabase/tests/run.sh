@@ -67,10 +67,23 @@ for migration in "$repo"/supabase/migrations/*.sql; do
   echo "  $(basename "$migration")"
 done
 
-echo "Re-applying migrations to check they are idempotent..."
+# Put a month of real data in before re-applying, so the second pass is a
+# migration running over an existing database rather than an empty one - which
+# is the only version of the question that matters.
+echo "Seeding a month of existing data..."
+run "$here/10_seed_existing_data.sql"
+
+echo "Re-applying migrations over it..."
 for migration in "$repo"/supabase/migrations/*.sql; do
   run "$migration" 2> >(grep -v NOTICE >&2 || true)
 done
+
+echo "Checking nothing was lost..."
+psql -h "$workdir" -p "$port" -U postgres -v ON_ERROR_STOP=1 \
+  -f "$here/20_data_survives.sql" 2>&1 | grep -E "PASS|ERROR" || {
+    echo "data preservation checks did not report PASS" >&2
+    exit 1
+  }
 
 echo "Running row level security checks..."
 psql -h "$workdir" -p "$port" -U postgres -v ON_ERROR_STOP=1 \
