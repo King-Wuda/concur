@@ -21,7 +21,11 @@ sessions, and still exportable to Excel when you want a copy.
   under one would pull that category's actual down, make its meter read wrong
   and its slice of the pie chart mislead. A refund that really should come off a
   category's spend belongs on the expense itself, as a negative line item.
-- **Scan a receipt.** Photograph a slip or pick a PDF. A vision model extracts
+- **Scan a receipt.** Pick a photo, a screenshot or a PDF from the device, take
+  a fresh photo, or drop a file in. Choosing is the default route: a file input
+  that carries `capture` opens a phone's camera and nothing else — no gallery,
+  no screenshots — which is useless for the thing most often filed here, a trip
+  or an order already sitting in the camera roll. A vision model extracts
   the store, date, total and every individual line item, proposes a category,
   and hands you a draft to check. Nothing is saved until you confirm it.
 - **Per-item categories.** Each line item carries its own category, so one

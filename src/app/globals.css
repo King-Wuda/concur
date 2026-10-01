@@ -258,3 +258,16 @@ body {
 :root[data-theme="dark"] .only-light {
   display: none;
 }
+
+/* Shown only where there is a camera to point: a coarse pointer with no hover
+   is the closest a stylesheet gets to asking "is this a phone?". On a desktop
+   the camera button would just open a second file dialog, which is noise. */
+.touch-only {
+  display: none;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .touch-only {
+    display: inline-flex;
+  }
+}

@@ -34,8 +34,10 @@ export function ReceiptCapture({
   userId: string;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const [stage, setStage] = useState<Stage>("idle");
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
 
@@ -59,7 +61,9 @@ export function ReceiptCapture({
     setImagePath(null);
     setExtraction(null);
     setDraft(emptyExpense(monthKey));
+    // Clear both, or picking the same file twice in a row fires no change event.
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
   async function handleFile(file: File) {
@@ -135,39 +139,98 @@ export function ReceiptCapture({
           </p>
         )}
 
-        <label
-          className="card flex cursor-pointer flex-col items-center gap-3 border-dashed px-6 py-10 text-center"
-          style={{ borderColor: "var(--border-strong)" }}
+        {/*
+          Two separate inputs, because one cannot do both jobs. A file input
+          carrying `capture` tells a phone to open the camera and nothing else -
+          no gallery, no files, no screenshots - which is useless for the thing
+          most often being filed here: a screenshot of a trip or an order that
+          is already in the camera roll. So picking is the default, and taking a
+          photo is its own button, shown only on a device that has a camera to
+          point.
+        */}
+        <div
+          className={`card flex flex-col items-center gap-3 border-dashed px-6 py-8 text-center ${
+            dragging ? "ring-2" : ""
+          }`}
+          style={{
+            borderColor: dragging ? "var(--accent)" : "var(--border-strong)",
+            background: dragging
+              ? "color-mix(in srgb, var(--accent) 6%, transparent)"
+              : undefined,
+          }}
+          onDragOver={(event) => {
+            event.preventDefault();
+            if (!busy) setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault();
+            setDragging(false);
+            const file = event.dataTransfer.files?.[0];
+            if (file && !busy) void handleFile(file);
+          }}
         >
           <span
             className="flex size-12 items-center justify-center rounded-full"
             style={{ background: "color-mix(in srgb, var(--accent) 14%, transparent)" }}
           >
-            <CameraIcon />
+            <ReceiptPlusIcon />
           </span>
+
           <span className="font-medium">
             {stage === "uploading"
               ? "Uploading..."
               : stage === "reading"
                 ? "Reading the receipt..."
-                : "Take a photo or choose a file"}
+                : "Add a receipt"}
           </span>
+
           <span className="text-sm text-ink-secondary">
-            JPEG, PNG, WebP or PDF. Photos are shrunk before upload.
+            A photo, a screenshot or a PDF. Images are shrunk before upload.
           </span>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
-            capture="environment"
-            className="sr-only"
-            disabled={busy}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void handleFile(file);
-            }}
-          />
-        </label>
+
+          <div className="flex w-full flex-wrap justify-center gap-2 pt-1">
+            <label className={`btn btn-primary ${busy ? "pointer-events-none opacity-55" : ""}`}>
+              Choose photo or file
+              <input
+                ref={fileInputRef}
+                type="file"
+                /* No `capture`: this is the one that reaches the gallery, the
+                   files app, and anything already saved on the device. */
+                accept="image/*,application/pdf"
+                className="sr-only"
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handleFile(file);
+                }}
+              />
+            </label>
+
+            <label
+              className={`btn touch-only ${busy ? "pointer-events-none opacity-55" : ""}`}
+            >
+              <CameraIcon />
+              Take a photo
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handleFile(file);
+                }}
+              />
+            </label>
+          </div>
+
+          <span className="hidden text-xs text-ink-muted sm:block">
+            or drop a file here
+          </span>
+        </div>
 
         {busy && (
           <p className="text-center text-sm text-ink-muted" role="status">
@@ -338,7 +401,9 @@ function extensionFor(mimeType: string) {
   ] ?? "jpg";
 }
 
-function CameraIcon() {
+/** The empty-state glyph: a slip with a plus, not a camera, now that choosing
+ *  a file is the main route in. */
+function ReceiptPlusIcon() {
   return (
     <svg
       width="24"
@@ -346,6 +411,27 @@ function CameraIcon() {
       viewBox="0 0 24 24"
       fill="none"
       stroke="var(--accent)"
+      strokeWidth="1.6"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M13 3H6.5v18l2.6-1.4 2.6 1.4 1.3-0.7" />
+      <path d="M9.5 8h5M9.5 11.5h3" />
+      <circle cx="17.5" cy="16.5" r="4.2" />
+      <path d="M17.5 14.6v3.8M15.6 16.5h3.8" />
+    </svg>
+  );
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
       strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
