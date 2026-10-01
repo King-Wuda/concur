@@ -104,7 +104,12 @@ export default async function DashboardPage({
         <header className="mb-3">
           <h2 className="font-semibold">Where the money went</h2>
           <p className="text-sm text-ink-secondary">
-            Share of {formatRand(totals.categoryActualTotal)} in categorised spend.
+            Share of {formatRand(totals.positiveSpendTotal)} in categorised spend
+            {totals.positiveSpendTotal !== totals.categoryActualTotal &&
+              `, before ${formatRand(
+                totals.positiveSpendTotal - totals.categoryActualTotal,
+              )} came back`}
+            .
           </p>
         </header>
         <SpendPieChart categories={categories} />

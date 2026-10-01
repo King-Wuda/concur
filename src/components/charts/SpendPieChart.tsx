@@ -76,11 +76,23 @@ export function SpendPieChart({ categories }: { categories: CategoryTotal[] }) {
               style={{ background: CATEGORY_COLOR_VAR[category.category] }}
             />
             <span className="truncate">{category.category}</span>
-            <span className="ml-auto tabular text-ink-secondary">
+            <span
+              className="ml-auto tabular text-ink-secondary"
+              style={category.actual < 0 ? { color: "var(--good-ink)" } : undefined}
+            >
               {formatRand(category.actual)}
             </span>
-            <span className="w-11 shrink-0 text-right tabular text-ink-muted">
-              {category.share.toFixed(0)}%
+            <span className="w-16 shrink-0 text-right tabular text-ink-muted">
+              {category.actual > 0 ? (
+                `${category.share.toFixed(0)}%`
+              ) : category.actual < 0 ? (
+                /* More came back than went out, so this is not a share of
+                   spending at all - say what it is instead of printing a
+                   negative percentage of a whole. */
+                <span title="More came back than was spent">back</span>
+              ) : (
+                "—"
+              )}
             </span>
           </li>
         ))}

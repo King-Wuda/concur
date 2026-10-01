@@ -371,3 +371,42 @@ test("a month with more coming in than going out is not overspent", () => {
   assert.equal(analysis.totals.availableTotal, 1_800);
   assert.equal(analysis.totals.remaining, 400);
 });
+
+test("a category that came out negative has no share of spending", () => {
+  // Real case: a payback larger than the month's spend in that category. A
+  // negative slice is not something a pie chart can draw or a reader can read,
+  // and the shares must still add up to the whole they are drawn inside.
+  const analysis = analyseMonth(
+    snapshot({
+      receipts: [
+        receipt("r1", 750, "Groceries", [item("Shop", 750, "Groceries")]),
+        receipt("r2", 250, "Chill", [item("Dinner", 250, "Chill")]),
+        receipt("r3", -2_048, "Lily", [item("Payback", -2_048, "Lily")]),
+      ],
+    }),
+  );
+
+  const lily = analysis.categories.find((c) => c.category === "Lily")!;
+  assert.equal(lily.actual, -2_048);
+  assert.equal(lily.share, 0);
+
+  // The two that were actually spent share the whole between them.
+  assert.equal(analysis.categories.find((c) => c.category === "Groceries")!.share, 75);
+  assert.equal(analysis.categories.find((c) => c.category === "Chill")!.share, 25);
+  assert.equal(
+    analysis.categories.reduce((sum, c) => sum + c.share, 0),
+    100,
+  );
+
+  // The chart divides by the positive total; the month's books still net off.
+  assert.equal(analysis.totals.positiveSpendTotal, 1_000);
+  assert.equal(analysis.totals.categoryActualTotal, -1_048);
+});
+
+test("with nothing negative, the two spend totals agree", () => {
+  const analysis = analyseMonth(
+    snapshot({ receipts: [receipt("r1", 400, "Groceries", [item("Shop", 400, "Groceries")])] }),
+  );
+  assert.equal(analysis.totals.positiveSpendTotal, analysis.totals.categoryActualTotal);
+  assert.equal(analysis.categories.find((c) => c.category === "Groceries")!.share, 100);
+});

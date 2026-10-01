@@ -14,7 +14,12 @@ export type CategoryTotal = {
   /** budgeted - actual. Negative means over budget. */
   variance: number;
   isOver: boolean;
-  /** Share of total category spend, as a percentage. */
+  /**
+   * Share of the month's spending, as a percentage. A category that came out
+   * negative - refunds or paybacks outweighing what was spent - has no share of
+   * spending at all and reports 0, because a negative slice of a whole is not a
+   * thing a pie chart can show or a reader can interpret.
+   */
   share: number;
   /** actual / budgeted as a percentage; 0 when nothing is budgeted. */
   usedPercent: number;
@@ -42,6 +47,12 @@ export type MonthTotals = {
   receiptsTotal: number;
   /** Everything that lands in a category: receipts plus budget-counting fixed expenses. */
   categoryActualTotal: number;
+  /**
+   * The same, counting only categories that are actually positive. This is what
+   * a share-of-spending chart divides by: including a negative category would
+   * make the slices add up to more than the whole they are drawn inside.
+   */
+  positiveSpendTotal: number;
   /** Tithe + rent + Investec: the summary block's committed outflows. */
   committedTotal: number;
   /** Every rand out the door this month. */
@@ -123,6 +134,9 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
   }
 
   const categoryActualTotal = sum(CATEGORIES.map((c) => actualByCategory[c]));
+  const positiveSpendTotal = sum(
+    CATEGORIES.map((c) => Math.max(round2(actualByCategory[c]), 0)),
+  );
 
   const categories: CategoryTotal[] = CATEGORIES.map((category) => {
     const actual = round2(actualByCategory[category]);
@@ -136,7 +150,7 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
       // Spending in a category budgeted at zero counts as over by the full
       // amount - that is the honest reading, and it surfaces forgotten budgets.
       isOver: actual > budgeted,
-      share: percentOf(actual, categoryActualTotal),
+      share: actual > 0 ? percentOf(actual, positiveSpendTotal) : 0,
       usedPercent: budgeted > 0 ? percentOf(actual, budgeted) : 0,
       receiptCount: receiptCountByCategory[category],
     };
@@ -180,6 +194,7 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
       fixedExcludedTotal: round2(fixedExcludedTotal),
       receiptsTotal,
       categoryActualTotal,
+      positiveSpendTotal,
       committedTotal,
       totalSpend,
       budgetTotal,
