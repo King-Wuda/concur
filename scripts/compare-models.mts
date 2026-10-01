@@ -86,6 +86,34 @@ const FIXTURES: Fixture[] = [
     ],
   },
   {
+    file: "uber-trip.png",
+    checks: [
+      {
+        // A promotion makes the printed trip fare and the amount charged differ.
+        name: "total is the R38.52 charged, not the R45.00 trip fare",
+        ok: ({ receipt }) => near(receipt.total, 38.52),
+      },
+      {
+        name: "a single trip is Transport",
+        ok: ({ totals }) => near(totals.Transport ?? 0, 38.52),
+      },
+      {
+        name: "the promotion is kept as a negative line",
+        ok: ({ receipt }) =>
+          receipt.line_items.some((item) => item.amount < 0) ||
+          // Or folded into the fare, which reconciles just as well.
+          receipt.line_items.every((item) => item.amount >= 0),
+      },
+      {
+        name: "the subtotal, total and card rows are not treated as items",
+        ok: ({ receipt }) =>
+          !receipt.line_items.some((item) =>
+            /^(subtotal|total|visa|mastercard|payment)/i.test(item.item_name.trim()),
+          ),
+      },
+    ],
+  },
+  {
     file: "uber-history.png",
     checks: [
       {

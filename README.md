@@ -197,9 +197,11 @@ against the rules from the brief:
 
 | Model | Checks passed | Per receipt | 100 receipts |
 |---|---|---|---|
-| Claude Opus 5.5 | 7/7 | 7.3s | $2.48 |
-| **Claude Sonnet 5.5** | **7/7** | **4.9s** | **$1.13** |
-| Claude Haiku 4.5 | 6/7 | 3.4s | $0.34 |
+| **Claude Sonnet 5.5** | **11/11** | **4.8s** | **$1.00** |
+
+Opus and Haiku were measured before the third fixture was added: Opus matched
+Sonnet but cost $2.48 per hundred, and Haiku was 6/7 — it stopped netting a
+basket discount off the item it belonged to.
 
 Sonnet matches Opus on every stated rule, faster and at under half the price.
 Haiku is cheaper again and would be tempting, but it stopped netting a basket
