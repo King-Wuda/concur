@@ -21,6 +21,17 @@ sessions, and still exportable to Excel when you want a copy.
   under one would pull that category's actual down, make its meter read wrong
   and its slice of the pie chart mislead. A refund that really should come off a
   category's spend belongs on the expense itself, as a negative line item.
+- **A pile at once.** Pick up to 20 receipts in one go, or snap several photos
+  one after another. They are uploaded and read three at a time while you
+  watch, come back as a list to check, and "Save all" files the lot. Then it
+  asks whether there is another receipt to add rather than dropping you on the
+  dashboard mid-pile.
+- **Filed by their own date.** Every expense and income entry counts against the
+  month on its own date, not whichever month was on screen when it was saved —
+  so catching up on last month's slips puts them in last month. A card in the
+  batch says "Goes to September 2026" when that differs from the month you are
+  looking at, and a receipt with no date on it says so rather than quietly
+  taking today's.
 - **Scan a receipt.** Pick a photo, a screenshot or a PDF from the device, take
   a fresh photo, or drop a file in. Choosing is the default route: a file input
   that carries `capture` opens a phone's camera and nothing else — no gallery,
@@ -201,7 +212,7 @@ against the rules from the brief:
 
 | Model | Checks passed | Per receipt | 100 receipts |
 |---|---|---|---|
-| **Claude Sonnet 5.5** | **11/11** | **4.8s** | **$1.00** |
+| **Claude Sonnet 5.5** | **15/15** | **2.8s** | **$0.86** |
 
 Opus and Haiku were measured before the third fixture was added: Opus matched
 Sonnet but cost $2.48 per hundred, and Haiku was 6/7 — it stopped netting a

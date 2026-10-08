@@ -3,23 +3,30 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveReceipt } from "@/app/actions";
+import { saveReceipt, type SaveReceiptInput } from "@/app/actions";
 import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";
-import { defaultDateInMonth, formatMonthLong, type MonthKey } from "@/lib/month";
+import {
+  dateToMonthKey,
+  defaultDateInMonth,
+  formatMonthLong,
+  isIsoDate,
+  type MonthKey,
+} from "@/lib/month";
 
 /**
- * The form an expense is confirmed in, whether it came off a photographed
+ * The fields an expense is confirmed in, whether it came off a photographed
  * receipt or was typed from memory.
  *
- * Both routes end up here on purpose: a scanned receipt is only ever a filled-in
- * draft of this form, so the two cannot drift apart in what they save, how they
- * balance line items, or how they treat a category change.
+ * Every route ends up in these same fields on purpose: a scanned receipt is only
+ * ever a filled-in draft of them, so typing and scanning cannot drift apart in
+ * what they save, how they balance line items, or how a category change
+ * re-homes them.
  *
- * It owns its own state. To load a different draft into it, give it a new React
- * `key` and it remounts with the new values - simpler than threading every
- * field back up to a parent that has no use for them.
+ * `ExpenseFields` is controlled - it holds no state - so a screen confirming a
+ * whole batch of receipts can keep every draft itself and save them together.
+ * `ExpenseForm` wraps it with state and save buttons for the one-at-a-time case.
  */
 
 export type ExpenseValues = {
@@ -42,81 +49,189 @@ export function emptyExpense(monthKey: MonthKey): ExpenseValues {
   };
 }
 
+/**
+ * The month an expense will land in: the one its own date falls in. Shown
+ * beside the save button so a receipt from last month says so before it goes.
+ */
+export function filingMonth(values: ExpenseValues, fallback: MonthKey): MonthKey {
+  return isIsoDate(values.date) ? dateToMonthKey(values.date) : fallback;
+}
+
+/** Turns what is on screen into what the save action takes. */
+export function expensePayload(
+  values: ExpenseValues,
+  extras: { imagePath?: string | null; rawExtraction?: unknown } = {},
+): SaveReceiptInput {
+  return {
+    store_name: values.storeName.trim() || "Unknown store",
+    date: values.date,
+    total: parseRand(values.total),
+    category: values.category,
+    note: values.note.trim() || null,
+    image_path: extras.imagePath ?? null,
+    raw_extraction: extras.rawExtraction ?? null,
+    line_items: values.items
+      .filter((item) => item.item_name.trim().length > 0)
+      .map((item) => ({
+        item_name: item.item_name.trim(),
+        amount: parseRand(item.amount),
+        quantity: item.quantity.trim() ? parseRand(item.quantity) : null,
+        category: item.category,
+      })),
+  };
+}
+
+export function ExpenseFields({
+  values,
+  onChange,
+  idPrefix = "",
+  storeLabel = "Store",
+  storePlaceholder = "Checkers Hyper",
+  autoFocusTotal = false,
+}: {
+  values: ExpenseValues;
+  onChange: (values: ExpenseValues) => void;
+  /** Keeps element ids unique when several of these are on one page. */
+  idPrefix?: string;
+  storeLabel?: string;
+  storePlaceholder?: string;
+  autoFocusTotal?: boolean;
+}) {
+  const set = (patch: Partial<ExpenseValues>) => onChange({ ...values, ...patch });
+  const id = (name: string) => `${idPrefix}${name}`;
+
+  const itemsTotal = sum(values.items.map((item) => parseRand(item.amount)));
+  const parsedTotal = parseRand(values.total);
+
+  /** Re-categorising the expense re-homes items that still match the old one. */
+  function changeCategory(next: Category) {
+    set({
+      category: next,
+      items: values.items.map((item) =>
+        item.category === values.category ? { ...item, category: next } : item,
+      ),
+    });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="card space-y-3 p-4">
+        <div className="space-y-1.5">
+          <label htmlFor={id("store")} className="text-sm font-medium">
+            {storeLabel}
+          </label>
+          <input
+            id={id("store")}
+            className="field"
+            value={values.storeName}
+            onChange={(event) => set({ storeName: event.target.value })}
+            placeholder={storePlaceholder}
+          />
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <label htmlFor={id("date")} className="text-sm font-medium">
+              Date
+            </label>
+            <input
+              id={id("date")}
+              type="date"
+              className="field"
+              value={values.date}
+              onChange={(event) => set({ date: event.target.value })}
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <label htmlFor={id("total")} className="text-sm font-medium">
+              Total paid
+            </label>
+            <input
+              id={id("total")}
+              className="field field-money"
+              inputMode="decimal"
+              autoFocus={autoFocusTotal}
+              value={values.total}
+              onChange={(event) => set({ total: event.target.value })}
+              placeholder="0.00"
+            />
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor={id("category")} className="text-sm font-medium">
+            Category
+          </label>
+          <select
+            id={id("category")}
+            className="field"
+            value={values.category}
+            onChange={(event) => changeCategory(event.target.value as Category)}
+          >
+            {CATEGORIES.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="space-y-1.5">
+          <label htmlFor={id("note")} className="text-sm font-medium">
+            Note <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <input
+            id={id("note")}
+            className="field"
+            value={values.note}
+            onChange={(event) => set({ note: event.target.value })}
+            placeholder="Paid partly with a gift card"
+          />
+        </div>
+      </div>
+
+      <LineItemEditor
+        items={values.items}
+        onChange={(items) => set({ items })}
+        fallbackCategory={values.category}
+        itemsTotal={itemsTotal}
+        difference={round2(parsedTotal - itemsTotal)}
+      />
+    </div>
+  );
+}
+
+/** One expense, typed by hand, with its own save buttons. */
 export function ExpenseForm({
   monthKey,
   initial,
-  imagePath = null,
-  rawExtraction = null,
-  preview = null,
   notice = null,
-  storeLabel = "Store",
-  storePlaceholder = "Checkers Hyper",
+  storeLabel,
+  storePlaceholder,
   submitLabel = "Save expense",
-  secondaryAction,
   onSavedAndContinue,
 }: {
   monthKey: MonthKey;
   initial: ExpenseValues;
-  imagePath?: string | null;
-  /** The model's raw output, kept alongside the receipt for auditing. */
-  rawExtraction?: unknown;
-  /** The uploaded file, shown beside the fields. */
-  preview?: React.ReactNode;
-  /** Anything worth saying above the fields, e.g. a low-confidence warning. */
+  /** Anything worth saying above the fields. */
   notice?: React.ReactNode;
   storeLabel?: string;
   storePlaceholder?: string;
   submitLabel?: string;
-  secondaryAction?: { label: string; onClick: () => void };
   /** Called after "save and add another", so the caller can set up the next one. */
   onSavedAndContinue: (savedName: string) => void;
 }) {
   const router = useRouter();
 
-  const [storeName, setStoreName] = useState(initial.storeName);
-  const [date, setDate] = useState(initial.date);
-  const [total, setTotal] = useState(initial.total);
-  const [category, setCategory] = useState<Category>(initial.category);
-  const [note, setNote] = useState(initial.note);
-  const [items, setItems] = useState<DraftLineItem[]>(initial.items);
-
+  const [values, setValues] = useState<ExpenseValues>(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const itemsTotal = sum(items.map((item) => parseRand(item.amount)));
-  const parsedTotal = parseRand(total);
-
-  /** Re-categorising the expense re-homes items that still match the old one. */
-  function changeCategory(next: Category) {
-    setItems((current) =>
-      current.map((item) => (item.category === category ? { ...item, category: next } : item)),
-    );
-    setCategory(next);
-  }
 
   async function save(andAnother: boolean) {
     setError(null);
     setSaving(true);
-
-    const result = await saveReceipt({
-      monthKey,
-      store_name: storeName.trim() || "Unknown store",
-      date,
-      total: parsedTotal,
-      category,
-      note: note.trim() || null,
-      image_path: imagePath,
-      raw_extraction: rawExtraction,
-      line_items: items
-        .filter((item) => item.item_name.trim().length > 0)
-        .map((item) => ({
-          item_name: item.item_name.trim(),
-          amount: parseRand(item.amount),
-          quantity: item.quantity.trim() ? parseRand(item.quantity) : null,
-          category: item.category,
-        })),
-    });
-
+    const result = await saveReceipt(expensePayload(values));
     setSaving(false);
 
     if (!result.ok) {
@@ -125,7 +240,7 @@ export function ExpenseForm({
     }
 
     if (andAnother) {
-      onSavedAndContinue(storeName.trim() || "Expense");
+      onSavedAndContinue(values.storeName.trim() || "Expense");
       router.refresh();
       return;
     }
@@ -135,143 +250,46 @@ export function ExpenseForm({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="mx-auto w-full max-w-2xl space-y-4">
       {notice}
 
-      <div
-        className={
-          preview
-            ? "grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
-            : "mx-auto w-full max-w-2xl"
-        }
-      >
-        {preview}
+      <ExpenseFields
+        values={values}
+        onChange={setValues}
+        storeLabel={storeLabel}
+        storePlaceholder={storePlaceholder}
+        autoFocusTotal
+      />
 
-        <div className="space-y-4">
-          <div className="card space-y-3 p-4">
-            <div className="space-y-1.5">
-              <label htmlFor="store" className="text-sm font-medium">
-                {storeLabel}
-              </label>
-              <input
-                id="store"
-                className="field"
-                value={storeName}
-                onChange={(event) => setStoreName(event.target.value)}
-                placeholder={storePlaceholder}
-              />
-            </div>
+      {error && (
+        <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
+          {error}
+        </p>
+      )}
 
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label htmlFor="date" className="text-sm font-medium">
-                  Date
-                </label>
-                <input
-                  id="date"
-                  type="date"
-                  className="field"
-                  value={date}
-                  onChange={(event) => setDate(event.target.value)}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label htmlFor="total" className="text-sm font-medium">
-                  Total paid
-                </label>
-                <input
-                  id="total"
-                  className="field field-money"
-                  inputMode="decimal"
-                  autoFocus={!preview}
-                  value={total}
-                  onChange={(event) => setTotal(event.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="category" className="text-sm font-medium">
-                Category
-              </label>
-              <select
-                id="category"
-                className="field"
-                value={category}
-                onChange={(event) => changeCategory(event.target.value as Category)}
-              >
-                {CATEGORIES.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-1.5">
-              <label htmlFor="note" className="text-sm font-medium">
-                Note <span className="font-normal text-ink-muted">(optional)</span>
-              </label>
-              <input
-                id="note"
-                className="field"
-                value={note}
-                onChange={(event) => setNote(event.target.value)}
-                placeholder="Paid partly with a gift card"
-              />
-            </div>
-          </div>
-
-          <LineItemEditor
-            items={items}
-            onChange={setItems}
-            fallbackCategory={category}
-            itemsTotal={itemsTotal}
-            difference={round2(parsedTotal - itemsTotal)}
-          />
-
-          {error && (
-            <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
-              {error}
-            </p>
-          )}
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="btn btn-primary"
-              disabled={saving}
-              onClick={() => void save(false)}
-            >
-              {saving ? "Saving..." : submitLabel}
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={saving}
-              onClick={() => void save(true)}
-            >
-              Save and add another
-            </button>
-            {secondaryAction && (
-              <button
-                type="button"
-                className="btn"
-                disabled={saving}
-                onClick={secondaryAction.onClick}
-              >
-                {secondaryAction.label}
-              </button>
-            )}
-          </div>
-
-          <p className="text-xs text-ink-muted">
-            Saving to {formatMonthLong(monthKey)} · {formatRand(parsedTotal)} total
-          </p>
-        </div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="btn btn-primary"
+          disabled={saving}
+          onClick={() => void save(false)}
+        >
+          {saving ? "Saving..." : submitLabel}
+        </button>
+        <button
+          type="button"
+          className="btn"
+          disabled={saving}
+          onClick={() => void save(true)}
+        >
+          Save and add another
+        </button>
       </div>
+
+      <p className="text-xs text-ink-muted">
+        Saving to {formatMonthLong(filingMonth(values, monthKey))} ·{" "}
+        {formatRand(parseRand(values.total))} total
+      </p>
     </div>
   );
 }

@@ -34,7 +34,8 @@ checks. Only rules the brief actually states are asserted:
 |---|---|
 | `till-slip.png` | Total is the **R537.26 paid**, not the R787.26 printed · nappies are Lily · the basket discount is netted off the mince (R104.39) · no subtotal, VAT or change row is treated as a line item |
 | `uber-trip.png` | Total is the **R38.52 charged**, not the R45.00 trip fare · the trip is **Transport** · the subtotal, total and card rows are not treated as line items |
-| `uber-history.png` | Total is R693.30 · trips are **Transport** (R350.30) · the KFC and Pizza Perfect orders are **Chill** (R343.00) |
+| `uber-history.png` | Total is R693.30 · dated with the **latest** trip, 15 September · trips are **Transport** (R350.30) · the KFC and Pizza Perfect orders are **Chill** (R343.00) |
+| all three | No note complaining that the date is in another month. They are read as if October were on screen — the catch-up case — and each is filed under the month on its own date, so such a note would only flag every catch-up receipt as needing a look. |
 
 **The Purity baby food is deliberately not checked.** Tinned baby food bought at
 a supermarket is defensibly Groceries and defensibly Lily, and models pick
@@ -50,7 +51,7 @@ Last run, on the checks above:
 
 | Model | Checks | Per receipt | 100 receipts |
 |---|---|---|---|
-| **Claude Sonnet 5.5** (default) | **11/11** | **4.8s** | **$1.00** |
+| **Claude Sonnet 5.5** (default) | **15/15** | **2.8s** | **$0.86** |
 
 Opus and Haiku were measured on the first two fixtures before `uber-trip` was
 added: Opus matched Sonnet at 7/7 but cost $2.48 per hundred, and Haiku was

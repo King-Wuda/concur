@@ -6,7 +6,7 @@ import * as z from "zod";
 import { CATEGORIES } from "@/lib/categories";
 import { ensureMonth } from "@/lib/data";
 import { round2 } from "@/lib/money";
-import { clampDateToMonth, isMonthKey } from "@/lib/month";
+import { dateToMonthKey, isIsoDate, isMonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -22,6 +22,7 @@ export type ActionResult<T = undefined> =
 const MonthKeySchema = z.string().refine(isMonthKey, "Expected a month like 2026-09");
 const CategorySchema = z.enum(CATEGORIES);
 const AmountSchema = z.coerce.number().finite().min(-1_000_000).max(10_000_000);
+const DateSchema = z.string().refine(isIsoDate, "Expected a real date like 2026-09-14");
 
 async function session() {
   const supabase = await createClient();
@@ -55,9 +56,8 @@ const LineItemInput = z.object({
 });
 
 const SaveReceiptInput = z.object({
-  monthKey: MonthKeySchema,
   store_name: z.string().trim().min(1).max(160),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date like 2026-09-14"),
+  date: DateSchema,
   total: AmountSchema,
   category: CategorySchema,
   note: z.string().trim().max(500).nullable().optional(),
@@ -75,7 +75,11 @@ export async function saveReceipt(
   try {
     const input = SaveReceiptInput.parse(raw);
     const { supabase, userId } = await session();
-    const month = await ensureMonth(supabase, userId, input.monthKey);
+    // An expense belongs to the month it happened in, whichever month happened
+    // to be on screen when it was saved. Filing a pile of September slips on
+    // the 8th of October must not count them against October's budget - nor
+    // quietly rewrite their dates to the 1st, which is what this used to do.
+    const month = await ensureMonth(supabase, userId, dateToMonthKey(input.date));
 
     const inserted = await supabase
       .from("receipts")
@@ -83,9 +87,7 @@ export async function saveReceipt(
         user_id: userId,
         month_id: month.id,
         store_name: input.store_name,
-        // A receipt always belongs to the month it is filed under, even if the
-        // slip's own date sits a day either side of the boundary.
-        date: clampDateToMonth(input.date, input.monthKey),
+        date: input.date,
         total: round2(input.total),
         category: input.category,
         note: input.note ?? null,
@@ -123,10 +125,7 @@ export async function saveReceipt(
 const UpdateReceiptInput = z.object({
   id: z.string().uuid(),
   store_name: z.string().trim().min(1).max(160).optional(),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
+  date: DateSchema.optional(),
   total: AmountSchema.optional(),
   category: CategorySchema.optional(),
   note: z.string().trim().max(500).nullable().optional(),
@@ -146,6 +145,11 @@ export async function updateReceipt(raw: UpdateReceiptInput): Promise<ActionResu
     if (Object.keys(fields).length > 0) {
       const patch = { ...fields } as Record<string, unknown>;
       if (typeof fields.total === "number") patch.total = round2(fields.total);
+      if (fields.date) {
+        // Correcting a date can move the expense into another month.
+        const month = await ensureMonth(supabase, userId, dateToMonthKey(fields.date));
+        patch.month_id = month.id;
+      }
 
       const updated = await supabase
         .from("receipts")
@@ -392,9 +396,8 @@ export async function saveFixedExpenses(raw: FixedExpensesInput): Promise<Action
 /* -------------------------------------------------------------------------- */
 
 const IncomeInput = z.object({
-  monthKey: MonthKeySchema,
   source: z.string().trim().min(1).max(160),
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Expected a date like 2026-09-14"),
+  date: DateSchema,
   amount: AmountSchema,
   note: z.string().trim().max(500).nullable().optional(),
 });
@@ -406,7 +409,8 @@ export async function saveIncome(raw: IncomeInput): Promise<ActionResult<{ id: s
   try {
     const input = IncomeInput.parse(raw);
     const { supabase, userId } = await session();
-    const month = await ensureMonth(supabase, userId, input.monthKey);
+    // Like an expense, income belongs to the month it arrived in.
+    const month = await ensureMonth(supabase, userId, dateToMonthKey(input.date));
 
     const inserted = await supabase
       .from("income")
@@ -414,8 +418,7 @@ export async function saveIncome(raw: IncomeInput): Promise<ActionResult<{ id: s
         user_id: userId,
         month_id: month.id,
         source: input.source,
-        // Income belongs to the month it is filed under, as receipts do.
-        date: clampDateToMonth(input.date, input.monthKey),
+        date: input.date,
         amount: round2(input.amount),
         note: input.note ?? null,
       })
@@ -434,10 +437,7 @@ export async function saveIncome(raw: IncomeInput): Promise<ActionResult<{ id: s
 const UpdateIncomeInput = z.object({
   id: z.string().uuid(),
   source: z.string().trim().min(1).max(160).optional(),
-  date: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .optional(),
+  date: DateSchema.optional(),
   amount: AmountSchema.optional(),
   note: z.string().trim().max(500).nullable().optional(),
 });
@@ -452,6 +452,10 @@ export async function updateIncome(raw: UpdateIncomeInput): Promise<ActionResult
     if (Object.keys(fields).length > 0) {
       const patch = { ...fields } as Record<string, unknown>;
       if (typeof fields.amount === "number") patch.amount = round2(fields.amount);
+      if (fields.date) {
+        const month = await ensureMonth(supabase, userId, dateToMonthKey(fields.date));
+        patch.month_id = month.id;
+      }
 
       const { error } = await supabase
         .from("income")

@@ -84,10 +84,18 @@ export function normaliseMonthKey(value: unknown): MonthKey {
   return isMonthKey(value) ? value : currentMonthKey();
 }
 
-/** Clamps an ISO date to the given month, so a receipt can't land elsewhere. */
-export function clampDateToMonth(isoDate: string, key: MonthKey): string {
-  if (isMonthKey(dateToMonthKey(isoDate)) && dateToMonthKey(isoDate) === key) {
-    return isoDate;
-  }
-  return monthKeyToDate(key);
+/**
+ * True for a real calendar date written as YYYY-MM-DD. The shape alone is not
+ * enough once the date decides which month something is filed under: a regex
+ * happily accepts 2026-13-45, which would then name a month that does not exist.
+ */
+export function isIsoDate(value: unknown): value is string {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
 }

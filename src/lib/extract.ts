@@ -80,7 +80,10 @@ export const ReceiptSchema = z.object({
   date: z
     .string()
     .nullable()
-    .describe("Purchase date as YYYY-MM-DD, or null if the receipt does not show one."),
+    .describe(
+      "Purchase date as YYYY-MM-DD; the latest one if several are shown. " +
+        "Null only if the receipt shows no date at all.",
+    ),
   total: z
     .number()
     .describe(
@@ -122,7 +125,10 @@ Amounts are what came out of pocket:
   covered part of the purchase, the total is what was actually paid after it,
   never the full retail price.
 - Where a discount applies to one item, put the net amount on that item. Where
-  it applies to the whole basket, add it as its own negative line item.
+  it applies to the whole basket, add it as its own negative line item. A
+  discount line that names a product (for example "XTRA SAVINGS - MINCE")
+  applies to that product: fold it into that item's amount and do not list the
+  discount separately.
 - If a line shows quantity x unit price, the amount is the line total.
 
 Categories - use exactly these six:
@@ -139,6 +145,11 @@ history) is Chill, not Transport. Only the actual trip fares in such a
 screenshot are Transport. If one screenshot mixes trips and food orders, set the
 receipt category from what dominates the amount and categorise each line item on
 its own merits.
+
+Dates: use the purchase date printed on the receipt. If it shows several dates
+- a history of trips or orders - use the latest of them. Receipts are often
+filed days or weeks after the purchase, so never comment on how the date relates
+to today or to any month; that is expected and is handled elsewhere.
 
 Be accurate rather than complete: if a figure is genuinely unreadable, leave the
 line out, set confidence to low, and say so in notes. Never invent an amount.`;
@@ -234,22 +245,37 @@ export type ExtractInput = {
   monthHint?: string;
 };
 
+/**
+ * The per-request half of the prompt. Exported so scripts/compare-models runs
+ * exactly what the app sends rather than a copy that can drift from it.
+ */
+export function receiptInstruction(
+  monthHint?: string,
+  today: string = new Date().toISOString().slice(0, 10),
+): string {
+  return [
+    "Extract this receipt.",
+    `Today is ${today}.`,
+    // Only a tiebreak for a date printed without its year or month. Each receipt
+    // is filed under the month on its own date, so a slip from another month is
+    // normal - catching up on last week's pile - and not worth a note.
+    monthHint
+      ? `If the date is missing its month or year, assume it falls in or near ${monthHint}.` +
+        " A receipt dated in a different month is expected and needs no note."
+      : null,
+    "If the receipt shows no date at all, return null for date rather than guessing.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export async function extractReceipt({
   base64,
   mimeType,
   monthHint,
   model = MODEL,
 }: ExtractInput): Promise<ExtractedReceipt> {
-  const today = new Date().toISOString().slice(0, 10);
-
-  const instruction = [
-    "Extract this receipt.",
-    `Today is ${today}.`,
-    monthHint ? `It is being filed under the month ${monthHint}.` : null,
-    "If the receipt shows no date at all, return null for date rather than guessing.",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const instruction = receiptInstruction(monthHint);
 
   let message;
   try {

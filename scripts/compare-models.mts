@@ -16,7 +16,12 @@ import fs from "node:fs";
 import Anthropic from "@anthropic-ai/sdk";
 import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 
-import { ReceiptSchema, SYSTEM_PROMPT, normaliseExtraction } from "@/lib/extract";
+import {
+  ReceiptSchema,
+  SYSTEM_PROMPT,
+  normaliseExtraction,
+  receiptInstruction,
+} from "@/lib/extract";
 import type { ExtractedReceipt } from "@/lib/types";
 import { round2, sum } from "@/lib/money";
 
@@ -53,6 +58,20 @@ type Result = {
 
 const near = (a: number, b: number) => Math.abs(a - b) < 0.005;
 
+/**
+ * Every fixture is dated September and read as if October were on screen - the
+ * catch-up case. Each is filed under the month on its own date, so a note
+ * complaining about the month is noise that flags every such receipt as
+ * needing a look.
+ */
+const noMonthComplaint = {
+  name: "no note complaining the date is in another month",
+  ok: ({ receipt }: Result) =>
+    !/outside|filing month|filed under|different month|current month|differs from|not (the )?october/i.test(
+      receipt.notes ?? "",
+    ),
+};
+
 const FIXTURES: Fixture[] = [
   {
     file: "till-slip.png",
@@ -83,6 +102,7 @@ const FIXTURES: Fixture[] = [
             /^(subtotal|vat|total|change|card payment)/i.test(item.item_name.trim()),
           ),
       },
+      noMonthComplaint,
     ],
   },
   {
@@ -111,6 +131,7 @@ const FIXTURES: Fixture[] = [
             /^(subtotal|total|visa|mastercard|payment)/i.test(item.item_name.trim()),
           ),
       },
+      noMonthComplaint,
     ],
   },
   {
@@ -119,6 +140,12 @@ const FIXTURES: Fixture[] = [
       {
         name: "total is R693.30",
         ok: ({ receipt }) => near(receipt.total, 693.3),
+      },
+      {
+        // Spans 12-15 September; a missing date would otherwise be filled in
+        // with a day in whatever month is on screen.
+        name: "dated with the latest trip, 15 September",
+        ok: ({ receipt }) => receipt.date === "2026-09-15",
       },
       {
         // The rule from the brief: food delivery inside a ride-hailing
@@ -130,6 +157,7 @@ const FIXTURES: Fixture[] = [
         name: "the KFC and Pizza Perfect orders are Chill (R343.00)",
         ok: ({ totals }) => near(totals.Chill ?? 0, 343),
       },
+      noMonthComplaint,
     ],
   },
 ];
@@ -161,7 +189,9 @@ async function run(model: string, file: string) {
           },
           {
             type: "text",
-            text: "Extract this receipt. It is being filed under the month 2026-09.",
+            // The real instruction, filed as if viewing a later month - the
+            // catch-up case, where an out-of-month date must not raise a note.
+            text: receiptInstruction("2026-10"),
           },
         ],
       },

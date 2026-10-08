@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  clampDateToMonth,
   defaultDateInMonth,
   currentMonthKey,
   dateToMonthKey,
   formatMonthLong,
   formatMonthShort,
+  isIsoDate,
   isMonthKey,
   monthKeyToDate,
   normaliseMonthKey,
@@ -45,9 +45,24 @@ test("month names are fixed, not locale data", () => {
   assert.equal(formatMonthShort("2026-12"), "Dec 2026");
 });
 
-test("a receipt dated outside its month is pulled back into it", () => {
-  assert.equal(clampDateToMonth("2026-09-14", "2026-09"), "2026-09-14");
-  assert.equal(clampDateToMonth("2026-08-31", "2026-09"), "2026-09-01");
+test("only real calendar dates count as dates", () => {
+  // The date now decides which month something is filed under, so a shape-only
+  // check would let 2026-13-45 name a month that does not exist.
+  assert.ok(isIsoDate("2026-09-14"));
+  assert.ok(isIsoDate("2028-02-29")); // a leap day
+  assert.ok(!isIsoDate("2026-02-29")); // not a leap year
+  assert.ok(!isIsoDate("2026-13-01"));
+  assert.ok(!isIsoDate("2026-09-31"));
+  assert.ok(!isIsoDate("2026-9-14"));
+  assert.ok(!isIsoDate("14/09/2026"));
+  assert.ok(!isIsoDate(""));
+  assert.ok(!isIsoDate(null));
+});
+
+test("a receipt is filed under the month on its own date", () => {
+  // Was: clamped into whichever month was on screen, rewriting the date.
+  assert.equal(dateToMonthKey("2026-09-29"), "2026-09");
+  assert.equal(dateToMonthKey("2026-10-01"), "2026-10");
 });
 
 test("a typed expense defaults to today, or the 1st for a past month", () => {

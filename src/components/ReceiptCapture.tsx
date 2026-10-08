@@ -1,30 +1,64 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { saveReceipt } from "@/app/actions";
 import {
-  ExpenseForm,
+  ExpenseFields,
   emptyExpense,
+  expensePayload,
+  filingMonth,
   type ExpenseValues,
 } from "@/components/ExpenseForm";
-import { monthKeyToDate, type MonthKey } from "@/lib/month";
+import { CATEGORY_COLOR_VAR } from "@/lib/categories";
+import { formatRand, parseRand, sum } from "@/lib/money";
+import { defaultDateInMonth, formatMonthLong, type MonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/client";
 import type { ExtractedReceipt } from "@/lib/types";
 
 /**
- * The phone-first capture flow: pick or snap a file, it is read for you, then
- * you check the draft and save. Nothing reaches the budget until you confirm.
+ * The capture flow, for one receipt or a pile of them.
  *
- * The file goes straight from the browser to private storage, and only its path
- * is sent to the server for reading, which keeps large photos out of the
- * serverless request body. Once a draft exists, the confirming is done by the
- * same form that manual entry uses.
+ * Pick several files at once (or snap photos one after another), and each is
+ * uploaded and read in parallel while you watch. They come back as a list of
+ * drafts to check - tap one to correct it - and "Save all" files the lot. Then
+ * it asks whether there is another receipt to add, rather than dropping you on
+ * the dashboard mid-pile.
+ *
+ * Every file goes straight from the browser to private storage; only its path
+ * is sent to the server to be read, which keeps big phone photos out of the
+ * serverless request body. Nothing reaches the budget until "Save all".
  */
 
-type Stage = "idle" | "uploading" | "reading" | "review";
+type Phase = "pick" | "review" | "done";
+
+type Status = "uploading" | "reading" | "ready" | "failed" | "saving" | "saved";
+
+type Entry = {
+  key: string;
+  fileName: string;
+  previewUrl: string | null;
+  isPdf: boolean;
+  status: Status;
+  /** Set once the file is in storage; cleaned up if the entry is discarded. */
+  imagePath: string | null;
+  extraction: ExtractedReceipt | null;
+  values: ExpenseValues;
+  error: string | null;
+  /** The receipt showed no date, so one was filled in - and needs a look. */
+  dateMissing: boolean;
+};
 
 const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
 const MAX_IMAGE_EDGE = 2000;
+/** A pile, not a shoebox: enough for a week of slips, few enough to check. */
+const MAX_BATCH = 20;
+/**
+ * How many receipts are read at once. Each takes a few seconds; three in
+ * parallel clears a pile quickly without tripping the API's rate limit.
+ */
+const READ_CONCURRENTLY = 3;
 
 export function ReceiptCapture({
   monthKey,
@@ -33,120 +67,384 @@ export function ReceiptCapture({
   monthKey: MonthKey;
   userId: string;
 }) {
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // The original File for each entry, so a failed one can be retried.
+  const filesRef = useRef(new Map<string, File>());
 
-  const [stage, setStage] = useState<Stage>("idle");
+  const [phase, setPhase] = useState<Phase>("pick");
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [savedMessage, setSavedMessage] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
+  const [saved, setSaved] = useState<{ name: string; total: number; month: MonthKey }[]>(
+    [],
+  );
+  const [unreadSkipped, setUnreadSkipped] = useState(0);
 
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isPdf, setIsPdf] = useState(false);
-  const [imagePath, setImagePath] = useState<string | null>(null);
-  const [extraction, setExtraction] = useState<ExtractedReceipt | null>(null);
-  const [draft, setDraft] = useState<ExpenseValues>(() => emptyExpense(monthKey));
-  // Bumped for each new draft, so the form remounts with the new values.
-  const [draftKey, setDraftKey] = useState(0);
+  const update = (key: string, patch: Partial<Entry>) =>
+    setEntries((current) =>
+      current.map((entry) => (entry.key === key ? { ...entry, ...patch } : entry)),
+    );
 
-  const busy = stage === "uploading" || stage === "reading";
+  const inFlight = entries.some((e) => e.status === "uploading" || e.status === "reading");
+  const ready = entries.filter((e) => e.status === "ready");
+  const readyTotal = sum(ready.map((e) => parseRand(e.values.total)));
+  const room = MAX_BATCH - entries.filter((e) => e.status !== "saved").length;
 
-  function reset() {
-    setStage("idle");
-    setError(null);
-    setSavedMessage(null);
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-    setPreviewUrl(null);
-    setIsPdf(false);
-    setImagePath(null);
-    setExtraction(null);
-    setDraft(emptyExpense(monthKey));
+  function clearInputs() {
     // Clear both, or picking the same file twice in a row fires no change event.
     if (fileInputRef.current) fileInputRef.current.value = "";
     if (cameraInputRef.current) cameraInputRef.current.value = "";
   }
 
-  async function handleFile(file: File) {
-    setError(null);
-    setSavedMessage(null);
+  /** Drops an entry, and its stored file if the receipt was never saved. */
+  function discard(entry: Entry) {
+    if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+    filesRef.current.delete(entry.key);
+    if (entry.imagePath && entry.status !== "saved") {
+      // Best effort: an orphaned file is untidy, not worth failing over.
+      void createClient().storage.from("receipts").remove([entry.imagePath]);
+    }
+  }
+
+  function remove(key: string) {
+    const entry = entries.find((e) => e.key === key);
+    if (entry) discard(entry);
+    const rest = entries.filter((e) => e.key !== key);
+    setEntries(rest);
+    if (openKey === key) setOpenKey(null);
+    if (rest.length === 0) setPhase("pick");
+  }
+
+  function startOver() {
+    for (const entry of entries) discard(entry);
+    setEntries([]);
+    setOpenKey(null);
+    setNotice(null);
+    setSaved([]);
+    setUnreadSkipped(0);
+    setPhase("pick");
+    clearInputs();
+  }
+
+  async function handleFiles(list: FileList | File[] | null) {
+    const files = Array.from(list ?? []);
+    clearInputs();
+    if (files.length === 0) return;
+
+    setNotice(null);
+    const accepted = files.slice(0, Math.max(room, 0));
+    if (accepted.length < files.length) {
+      setNotice(
+        `${MAX_BATCH} receipts at a time — ${
+          accepted.length === 0 ? "none" : `the first ${accepted.length}`
+        } of those were added. Save these, then add the rest.`,
+      );
+    }
+    if (accepted.length === 0) return;
+
+    const fresh: Entry[] = accepted.map((file) => ({
+      key: crypto.randomUUID(),
+      fileName: file.name || "Photo",
+      previewUrl: null,
+      isPdf: file.type === "application/pdf",
+      status: "uploading",
+      imagePath: null,
+      extraction: null,
+      values: emptyExpense(monthKey),
+      error: null,
+      dateMissing: false,
+    }));
+    fresh.forEach((entry, index) => filesRef.current.set(entry.key, accepted[index]));
+
+    // A single receipt opens straight into its form, as one always did.
+    if (entries.length === 0 && fresh.length === 1) setOpenKey(fresh[0].key);
+
+    setEntries((current) => [...current, ...fresh]);
+    setPhase("review");
+
+    await runPool(
+      fresh.map((entry) => () => processEntry(entry.key)),
+      READ_CONCURRENTLY,
+    );
+  }
+
+  /** Upload one file, then have it read. Never throws: failure lands on the entry. */
+  async function processEntry(key: string) {
+    const file = filesRef.current.get(key);
+    if (!file) return;
 
     if (file.size > MAX_UPLOAD_BYTES) {
-      setError("That file is larger than 15 MB. Try a photo instead of a scan.");
+      update(key, {
+        status: "failed",
+        error: "Larger than 15 MB. Try a photo of it instead of a scan.",
+      });
       return;
     }
 
-    const supabase = createClient();
-    setStage("uploading");
-    let uploadedPath: string | null = null;
+    update(key, { status: "uploading", error: null });
+    let path: string | null = null;
 
     try {
       const prepared = await prepareForUpload(file);
+      update(key, {
+        previewUrl: URL.createObjectURL(prepared.blob),
+        isPdf: prepared.mimeType === "application/pdf",
+      });
 
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(URL.createObjectURL(prepared.blob));
-      setIsPdf(prepared.mimeType === "application/pdf");
-
-      const path = `${userId}/${crypto.randomUUID()}.${prepared.extension}`;
-      const upload = await supabase.storage
-        .from("receipts")
+      path = `${userId}/${crypto.randomUUID()}.${prepared.extension}`;
+      const upload = await createClient()
+        .storage.from("receipts")
         .upload(path, prepared.blob, { contentType: prepared.mimeType, upsert: false });
-
       if (upload.error) throw new Error(upload.error.message);
-      uploadedPath = path;
-      setImagePath(path);
 
-      setStage("reading");
+      update(key, { imagePath: path, status: "reading" });
+
       const response = await fetch("/api/extract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path, monthKey }),
       });
-
       const payload = (await response.json()) as
         | { receipt: ExtractedReceipt }
         | { error: string };
 
       if (!response.ok || !("receipt" in payload)) {
-        throw new Error(
-          "error" in payload ? payload.error : "Could not read that receipt.",
-        );
+        throw new Error("error" in payload ? payload.error : "Could not read that receipt.");
       }
 
-      setExtraction(payload.receipt);
-      setDraft(toDraft(payload.receipt, monthKey));
-      setDraftKey((key) => key + 1);
-      setStage("review");
+      update(key, {
+        status: "ready",
+        extraction: payload.receipt,
+        values: toDraft(payload.receipt, monthKey),
+        dateMissing: payload.receipt.date === null,
+      });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Something went wrong.");
-      // If the file made it to storage, drop into the form anyway so the
-      // details can be typed by hand rather than starting the upload again.
-      if (uploadedPath) {
-        setDraft(emptyExpense(monthKey));
-        setDraftKey((key) => key + 1);
-        setStage("review");
+      const message = cause instanceof Error ? cause.message : "Something went wrong.";
+      if (path) {
+        // The file is safely stored, so keep it and let the details be typed
+        // in by hand rather than making them upload it again.
+        update(key, { status: "ready", error: `${message} Fill this one in by hand.` });
       } else {
-        setStage("idle");
+        update(key, { status: "failed", error: message });
       }
     }
   }
 
-  if (stage !== "review") {
+  async function saveAll() {
+    const pending = entries.filter((e) => e.status === "ready");
+    if (pending.length === 0) return;
+
+    // Catch the one that would save as "Unknown store, R0.00" before any are saved.
+    const blank = pending.find((e) => parseRand(e.values.total) === 0);
+    if (blank) {
+      setOpenKey(blank.key);
+      update(blank.key, { error: "Enter the total paid before saving." });
+      return;
+    }
+
+    setSavingAll(true);
+    setNotice(null);
+    const done: { name: string; total: number; month: MonthKey }[] = [];
+    const failedKeys: string[] = [];
+
+    // One at a time, in the order shown, so a failure is easy to point at.
+    for (const entry of pending) {
+      update(entry.key, { status: "saving", error: null });
+      const result = await saveReceipt(
+        expensePayload(entry.values, {
+          imagePath: entry.imagePath,
+          rawExtraction: entry.extraction,
+        }),
+      );
+      if (result.ok) {
+        update(entry.key, { status: "saved" });
+        done.push({
+          name: entry.values.storeName.trim() || "Unknown store",
+          total: parseRand(entry.values.total),
+          month: filingMonth(entry.values, monthKey),
+        });
+      } else {
+        failedKeys.push(entry.key);
+        update(entry.key, { status: "ready", error: result.error });
+      }
+    }
+
+    setSavingAll(false);
+    router.refresh();
+    setSaved((previous) => [...previous, ...done]);
+
+    if (failedKeys.length > 0) {
+      // Saved ones stay listed as saved; open the first that was not.
+      setOpenKey(failedKeys[0]);
+      setNotice(
+        `${done.length} saved, ${failedKeys.length} could not be — ${
+          failedKeys.length === 1 ? "it is" : "they are"
+        } still below with the reason. Press save again once fixed.`,
+      );
+      return;
+    }
+
+    // Anything that never uploaded was shown as failed and is not coming back.
+    const unread = entries.filter((e) => e.status === "failed");
+    setUnreadSkipped(unread.length);
+    for (const entry of entries) {
+      if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+    }
+    filesRef.current.clear();
+    setEntries([]);
+    setOpenKey(null);
+    setPhase("done");
+  }
+
+  /* ---------------------------------------------------------------- done -- */
+
+  if (phase === "done") {
+    const total = sum(saved.map((s) => s.total));
+    const months = [...new Set(saved.map((s) => s.month))].sort();
+    const monthsText =
+      months.length <= 1
+        ? formatMonthLong(months[0] ?? monthKey)
+        : `${months.slice(0, -1).map(formatMonthLong).join(", ")} and ${formatMonthLong(
+            months[months.length - 1],
+          )}`;
+    return (
+      <div className="mx-auto max-w-lg space-y-4">
+        <div className="card space-y-4 p-5 text-center">
+          <span
+            className="mx-auto flex size-12 items-center justify-center rounded-full"
+            style={{ background: "color-mix(in srgb, var(--good) 16%, transparent)" }}
+          >
+            <CheckIcon />
+          </span>
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold" role="status">
+              {saved.length === 1 ? "Expense saved" : `${saved.length} expenses saved`}
+            </h2>
+            <p className="text-sm text-ink-secondary">
+              {formatRand(total)} added to {monthsText}.
+            </p>
+          </div>
+
+          {saved.length > 1 && (
+            <ul className="divide-y divide-[var(--border)] text-left text-sm">
+              {saved.map((s, index) => (
+                <li key={index} className="flex justify-between gap-3 py-1.5">
+                  <span className="truncate">
+                    {s.name}
+                    {months.length > 1 && (
+                      <span className="text-ink-muted"> · {formatMonthLong(s.month)}</span>
+                    )}
+                  </span>
+                  <span className="tabular">{formatRand(s.total)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {unreadSkipped > 0 && (
+            <p className="text-sm text-ink-secondary">
+              {unreadSkipped === 1
+                ? "1 file could not be uploaded and was not saved."
+                : `${unreadSkipped} files could not be uploaded and were not saved.`}
+            </p>
+          )}
+        </div>
+
+        <div className="card space-y-3 p-5 text-center">
+          <p className="font-medium">Add another receipt?</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                setSaved([]);
+                setUnreadSkipped(0);
+                setPhase("pick");
+              }}
+            >
+              Yes, add another
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => router.push(`/?m=${monthKey}`)}
+            >
+              No, go to dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ---------------------------------------------------------------- pick -- */
+
+  const pickers = (primaryLabel: string, compact: boolean) => (
+    <>
+      <label
+        className={`btn ${compact ? "" : "btn-primary"} ${
+          savingAll ? "pointer-events-none opacity-55" : ""
+        }`}
+      >
+        {primaryLabel}
+        <input
+          ref={fileInputRef}
+          type="file"
+          /* No `capture`: this is the one that reaches the gallery, the files
+             app, and anything already saved on the device. `multiple` lets a
+             whole pile be chosen in one go. */
+          accept="image/*,application/pdf"
+          multiple
+          className="sr-only"
+          disabled={savingAll}
+          onChange={(event) => void handleFiles(event.target.files)}
+        />
+      </label>
+
+      <label
+        className={`btn touch-only ${savingAll ? "pointer-events-none opacity-55" : ""}`}
+      >
+        <CameraIcon />
+        Take a photo
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="sr-only"
+          disabled={savingAll}
+          onChange={(event) => void handleFiles(event.target.files)}
+        />
+      </label>
+    </>
+  );
+
+  const dropProps = {
+    onDragOver: (event: React.DragEvent) => {
+      event.preventDefault();
+      if (!savingAll) setDragging(true);
+    },
+    onDragLeave: () => setDragging(false),
+    onDrop: (event: React.DragEvent) => {
+      event.preventDefault();
+      setDragging(false);
+      if (!savingAll) void handleFiles(event.dataTransfer.files);
+    },
+  };
+
+  if (phase === "pick") {
     return (
       <div className="space-y-4">
-        {savedMessage && (
-          <p role="status" className="text-sm" style={{ color: "var(--good-ink)" }}>
-            {savedMessage}
-          </p>
-        )}
-
         {/*
-          Two separate inputs, because one cannot do both jobs. A file input
-          carrying `capture` tells a phone to open the camera and nothing else -
-          no gallery, no files, no screenshots - which is useless for the thing
-          most often being filed here: a screenshot of a trip or an order that
-          is already in the camera roll. So picking is the default, and taking a
-          photo is its own button, shown only on a device that has a camera to
-          point.
+          Picking and photographing are separate inputs, because one cannot do
+          both: a file input carrying `capture` tells a phone to open the camera
+          and nothing else - no gallery, no screenshots - which is useless for a
+          trip or an order already in the camera roll. The camera button shows
+          only on a device that has one to point.
         */}
         <div
           className={`card flex flex-col items-center gap-3 border-dashed px-6 py-8 text-center ${
@@ -158,17 +456,7 @@ export function ReceiptCapture({
               ? "color-mix(in srgb, var(--accent) 6%, transparent)"
               : undefined,
           }}
-          onDragOver={(event) => {
-            event.preventDefault();
-            if (!busy) setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={(event) => {
-            event.preventDefault();
-            setDragging(false);
-            const file = event.dataTransfer.files?.[0];
-            if (file && !busy) void handleFile(file);
-          }}
+          {...dropProps}
         >
           <span
             className="flex size-12 items-center justify-center rounded-full"
@@ -176,145 +464,397 @@ export function ReceiptCapture({
           >
             <ReceiptPlusIcon />
           </span>
-
-          <span className="font-medium">
-            {stage === "uploading"
-              ? "Uploading..."
-              : stage === "reading"
-                ? "Reading the receipt..."
-                : "Add a receipt"}
-          </span>
-
+          <span className="font-medium">Add receipts</span>
           <span className="text-sm text-ink-secondary">
-            A photo, a screenshot or a PDF. Images are shrunk before upload.
+            Photos, screenshots or PDFs — pick as many as you like, up to {MAX_BATCH}.
+            Each one is read for you, and nothing is saved until you check them.
           </span>
 
           <div className="flex w-full flex-wrap justify-center gap-2 pt-1">
-            <label className={`btn btn-primary ${busy ? "pointer-events-none opacity-55" : ""}`}>
-              Choose photo or file
-              <input
-                ref={fileInputRef}
-                type="file"
-                /* No `capture`: this is the one that reaches the gallery, the
-                   files app, and anything already saved on the device. */
-                accept="image/*,application/pdf"
-                className="sr-only"
-                disabled={busy}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void handleFile(file);
-                }}
-              />
-            </label>
-
-            <label
-              className={`btn touch-only ${busy ? "pointer-events-none opacity-55" : ""}`}
-            >
-              <CameraIcon />
-              Take a photo
-              <input
-                ref={cameraInputRef}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="sr-only"
-                disabled={busy}
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (file) void handleFile(file);
-                }}
-              />
-            </label>
+            {pickers("Choose photos or files", false)}
           </div>
 
-          <span className="hidden text-xs text-ink-muted sm:block">
-            or drop a file here
-          </span>
+          <span className="hidden text-xs text-ink-muted sm:block">or drop files here</span>
         </div>
 
-        {busy && (
-          <p className="text-center text-sm text-ink-muted" role="status">
-            {stage === "reading"
-              ? "This usually takes a few seconds."
-              : "Sending the photo to your private storage."}
-          </p>
-        )}
-
-        {error && (
+        {notice && (
           <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
-            {error}
+            {notice}
           </p>
         )}
       </div>
     );
   }
 
+  /* -------------------------------------------------------------- review -- */
+
+  const readingCount = entries.filter(
+    (e) => e.status === "uploading" || e.status === "reading",
+  ).length;
+
   return (
-    <ExpenseForm
-      key={draftKey}
-      monthKey={monthKey}
-      initial={draft}
-      imagePath={imagePath}
-      rawExtraction={extraction}
-      submitLabel="Save receipt"
-      secondaryAction={{ label: "Start over", onClick: reset }}
-      onSavedAndContinue={(name) => {
-        reset();
-        setSavedMessage(`${name} saved. Ready for the next one.`);
-      }}
-      notice={
-        <>
-          {error && (
+    <div className="space-y-4" {...dropProps}>
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="font-semibold">
+          {entries.length === 1 ? "Check the receipt" : `Check ${entries.length} receipts`}
+        </h2>
+        <p className="text-sm text-ink-secondary" role="status" aria-live="polite">
+          {readingCount > 0
+            ? `Reading ${readingCount} of ${entries.length}…`
+            : "Tap one to correct it."}
+        </p>
+      </header>
+
+      <ul className="space-y-2">
+        {entries.map((entry, index) => (
+          <EntryCard
+            key={entry.key}
+            entry={entry}
+            index={index}
+            monthKey={monthKey}
+            open={openKey === entry.key}
+            locked={savingAll}
+            onToggle={() =>
+              setOpenKey((current) => (current === entry.key ? null : entry.key))
+            }
+            onChange={(values) =>
+              update(entry.key, {
+                values,
+                error: null,
+                // Touching the date answers the question it was asking.
+                dateMissing: entry.dateMissing && values.date === entry.values.date,
+              })
+            }
+            onRemove={() => remove(entry.key)}
+            onRetry={() => void processEntry(entry.key)}
+          />
+        ))}
+      </ul>
+
+      {notice && (
+        <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
+          {notice}
+        </p>
+      )}
+
+      <div className="sticky bottom-16 z-10 space-y-3 rounded-xl border border-line bg-surface p-3 shadow-lg sm:bottom-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={savingAll || inFlight || ready.length === 0}
+            onClick={() => void saveAll()}
+          >
+            {savingAll
+              ? "Saving..."
+              : inFlight
+                ? "Reading…"
+                : ready.length === 1
+                  ? `Save expense · ${formatRand(readyTotal)}`
+                  : `Save all ${ready.length} · ${formatRand(readyTotal)}`}
+          </button>
+
+          {room > 0 && pickers("Add more", true)}
+
+          <button
+            type="button"
+            className="btn ml-auto"
+            disabled={savingAll}
+            onClick={startOver}
+          >
+            Start over
+          </button>
+        </div>
+        <p className="text-xs text-ink-muted">
+          Each is saved to the month on its own date. Nothing is saved until you
+          press save.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------------------- */
+
+function EntryCard({
+  entry,
+  index,
+  monthKey,
+  open,
+  locked,
+  onToggle,
+  onChange,
+  onRemove,
+  onRetry,
+}: {
+  entry: Entry;
+  index: number;
+  monthKey: MonthKey;
+  open: boolean;
+  locked: boolean;
+  onToggle: () => void;
+  onChange: (values: ExpenseValues) => void;
+  onRemove: () => void;
+  onRetry: () => void;
+}) {
+  const { status, values, extraction } = entry;
+  const lands = filingMonth(values, monthKey);
+  const otherMonth = status !== "uploading" && status !== "reading" && lands !== monthKey;
+  const busy = status === "uploading" || status === "reading" || status === "saving";
+  const editable = status === "ready" && !locked;
+  const needsLook =
+    status === "ready" &&
+    (entry.error !== null ||
+      entry.dateMissing ||
+      Boolean(extraction?.notes) ||
+      (extraction !== null && extraction.confidence !== "high"));
+
+  const subtitle =
+    status === "uploading"
+      ? "Uploading…"
+      : status === "reading"
+        ? "Reading…"
+        : status === "saving"
+          ? "Saving…"
+          : status === "saved"
+            ? "Saved"
+            : status === "failed"
+              ? "Could not be uploaded"
+              : `${values.date} · ${values.category}${
+                  values.items.length > 0
+                    ? ` · ${values.items.length} item${values.items.length === 1 ? "" : "s"}`
+                    : ""
+                }`;
+
+  return (
+    <li className="card overflow-hidden">
+      <button
+        type="button"
+        className="flex w-full items-center gap-3 p-3 text-left disabled:cursor-default"
+        aria-expanded={open}
+        disabled={!editable}
+        onClick={onToggle}
+      >
+        <Thumb entry={entry} />
+
+        <span className="min-w-0 flex-1">
+          <span className="flex items-center gap-1.5">
+            {status === "ready" && (
+              <span
+                aria-hidden
+                className="size-2 shrink-0 rounded-sm"
+                style={{ background: CATEGORY_COLOR_VAR[values.category] }}
+              />
+            )}
+            <span className="truncate font-medium">
+              {status === "ready" || status === "saving" || status === "saved"
+                ? values.storeName || "Untitled"
+                : entry.fileName}
+            </span>
+          </span>
+          <span
+            className="block truncate text-xs"
+            style={{
+              color:
+                status === "failed"
+                  ? "var(--critical)"
+                  : status === "saved"
+                    ? "var(--good-ink)"
+                    : "var(--ink-muted)",
+            }}
+          >
+            {subtitle}
+          </span>
+          {otherMonth && status !== "failed" && (
+            <span className="mt-0.5 block text-xs font-medium text-ink-secondary">
+              Goes to {formatMonthLong(lands)}
+            </span>
+          )}
+          {needsLook && !open && (
+            <span className="mt-0.5 block text-xs font-medium" style={{ color: "var(--serious)" }}>
+              Check this one
+            </span>
+          )}
+        </span>
+
+        {(status === "ready" || status === "saving" || status === "saved") && (
+          <span className="tabular font-semibold">{formatRand(parseRand(values.total))}</span>
+        )}
+        {busy && <Spinner />}
+        {editable && <Chevron open={open} />}
+      </button>
+
+      {status === "failed" && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-line px-3 py-2">
+          <p className="mr-auto text-sm" style={{ color: "var(--critical)" }}>
+            {entry.error}
+          </p>
+          <button type="button" className="btn !min-h-9 !px-3 !py-1.5 !text-sm" onClick={onRetry}>
+            Try again
+          </button>
+          <button
+            type="button"
+            className="btn btn-danger !min-h-9 !px-3 !py-1.5 !text-sm"
+            onClick={onRemove}
+          >
+            Remove
+          </button>
+        </div>
+      )}
+
+      {open && editable && (
+        <div className="space-y-4 border-t border-line p-4">
+          {entry.error && (
             <p role="alert" className="text-sm" style={{ color: "var(--critical)" }}>
-              {error}
+              {entry.error}
+            </p>
+          )}
+          {entry.dateMissing && (
+            <p className="card p-3 text-sm" style={{ borderColor: "var(--warning)" }}>
+              <strong className="font-semibold">No date on this receipt. </strong>
+              {values.date} was filled in — change it if that is not when you paid,
+              since the date decides which month it counts against.
             </p>
           )}
           {extraction?.notes && (
-            <p
-              className="card p-3 text-sm"
-              style={{ borderColor: "var(--warning)" }}
-              role="status"
-            >
+            <p className="card p-3 text-sm" style={{ borderColor: "var(--warning)" }}>
               <strong className="font-semibold">Worth a look: </strong>
               {extraction.notes}
             </p>
           )}
           {extraction && extraction.confidence !== "high" && (
             <p className="text-sm text-ink-secondary">
-              Read with {extraction.confidence} confidence — check the amounts below.
+              Read with {extraction.confidence} confidence — check the amounts.
             </p>
           )}
-        </>
-      }
-      preview={
-        previewUrl ? (
-          <div className="card overflow-hidden">
-            {isPdf ? (
-              <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-ink-secondary">
-                <DocumentIcon />
-                PDF uploaded.
-                <a
-                  href={previewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-accent underline underline-offset-4"
-                >
-                  Open it
-                </a>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+            {entry.previewUrl && (
+              <div className="card self-start overflow-hidden">
+                {entry.isPdf ? (
+                  <div className="flex flex-col items-center gap-2 p-6 text-center text-sm text-ink-secondary">
+                    <DocumentIcon />
+                    PDF uploaded.
+                    <a
+                      href={entry.previewUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-accent underline underline-offset-4"
+                    >
+                      Open it
+                    </a>
+                  </div>
+                ) : (
+                  /* eslint-disable-next-line @next/next/no-img-element -- a local
+                     object URL for the file just picked; nothing to optimise. */
+                  <img
+                    src={entry.previewUrl}
+                    alt={`Receipt ${index + 1}`}
+                    className="max-h-[50vh] w-full object-contain"
+                  />
+                )}
               </div>
-            ) : (
-              /* eslint-disable-next-line @next/next/no-img-element -- a local
-                 object URL for the file just picked; there is nothing to optimise. */
-              <img
-                src={previewUrl}
-                alt="The receipt you uploaded"
-                className="max-h-[60vh] w-full object-contain"
-              />
             )}
+
+            <ExpenseFields
+              values={values}
+              onChange={onChange}
+              idPrefix={`r${index}-`}
+            />
           </div>
-        ) : null
-      }
-    />
+
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="btn" onClick={onToggle}>
+              Done
+            </button>
+            <button type="button" className="btn btn-danger ml-auto" onClick={onRemove}>
+              Remove from this batch
+            </button>
+          </div>
+          <p className="text-xs text-ink-muted">
+            Will be saved to {formatMonthLong(lands)}, the month on its date.
+          </p>
+        </div>
+      )}
+    </li>
+  );
+}
+
+function Thumb({ entry }: { entry: Entry }) {
+  return (
+    <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-md bg-sunken">
+      {entry.previewUrl && !entry.isPdf ? (
+        /* eslint-disable-next-line @next/next/no-img-element -- local object URL */
+        <img src={entry.previewUrl} alt="" className="size-full object-cover" />
+      ) : (
+        <DocumentIcon />
+      )}
+    </span>
+  );
+}
+
+/** Runs async jobs with at most `limit` in flight at once. */
+async function runPool(jobs: (() => Promise<void>)[], limit: number) {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, jobs.length) }, async () => {
+    while (next < jobs.length) {
+      const job = jobs[next];
+      next += 1;
+      await job();
+    }
+  });
+  await Promise.all(workers);
+}
+
+function Spinner() {
+  return (
+    <svg
+      className="size-4 shrink-0 animate-spin text-ink-muted"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
+      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="shrink-0 text-ink-muted"
+      style={{ transform: open ? "rotate(180deg)" : undefined }}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="var(--good-ink)"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
   );
 }
 
@@ -323,7 +863,9 @@ export function ReceiptCapture({
 function toDraft(receipt: ExtractedReceipt, monthKey: MonthKey): ExpenseValues {
   return {
     storeName: receipt.store_name,
-    date: receipt.date ?? monthKeyToDate(monthKey),
+    // A dateless receipt gets today (or the 1st of a past month); the card
+    // then says so, because the date decides which month it counts against.
+    date: receipt.date ?? defaultDateInMonth(monthKey),
     total: receipt.total ? String(receipt.total) : "",
     category: receipt.category,
     note: "",

@@ -5,7 +5,13 @@ import { useState } from "react";
 
 import { saveIncome } from "@/app/actions";
 import { formatRand, parseRand } from "@/lib/money";
-import { defaultDateInMonth, formatMonthLong, type MonthKey } from "@/lib/month";
+import {
+  dateToMonthKey,
+  defaultDateInMonth,
+  formatMonthLong,
+  isIsoDate,
+  type MonthKey,
+} from "@/lib/month";
 
 /**
  * Recording money that came in: someone sending money, a refund, a side job.
@@ -51,7 +57,6 @@ export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
 
     setSaving(true);
     const result = await saveIncome({
-      monthKey,
       source: source.trim() || "Money in",
       date,
       amount: parsedAmount,
@@ -177,7 +182,9 @@ export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
       </div>
 
       <p className="text-xs text-ink-muted">
-        Saving to {formatMonthLong(monthKey)} · {formatRand(parsedAmount)} in
+        Saving to{" "}
+        {formatMonthLong(isIsoDate(date) ? dateToMonthKey(date) : monthKey)} ·{" "}
+        {formatRand(parsedAmount)} in
       </p>
     </div>
   );
