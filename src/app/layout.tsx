@@ -3,7 +3,8 @@ import { Suspense } from "react";
 
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
-import { getUser } from "@/lib/supabase/server";
+import { resolveMonth } from "@/lib/data";
+import { createClient, getUser } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: "Budget",
@@ -34,6 +35,13 @@ export default async function RootLayout({
   children: React.ReactNode;
 }) {
   const user = await getUser();
+  // The pay period running today, which the header shows when no month is
+  // picked. Best effort: the header is no reason to fail the whole page.
+  const currentKey = user
+    ? await resolveMonth(await createClient(), user.id, null)
+        .then((r) => r.currentKey)
+        .catch(() => null)
+    : null;
 
   return (
     <html lang="en-ZA" suppressHydrationWarning>
@@ -43,7 +51,9 @@ export default async function RootLayout({
       <body className="min-h-dvh antialiased">
         {/* AppShell reads the `m` search param, which needs a boundary. */}
         <Suspense fallback={null}>
-          <AppShell userEmail={user?.email ?? null}>{children}</AppShell>
+          <AppShell userEmail={user?.email ?? null} currentKey={currentKey}>
+            {children}
+          </AppShell>
         </Suspense>
       </body>
     </html>

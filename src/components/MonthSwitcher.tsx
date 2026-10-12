@@ -2,12 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 
-import {
-  currentMonthKey,
-  formatMonthLong,
-  shiftMonth,
-  type MonthKey,
-} from "@/lib/month";
+import { formatMonthLong, shiftMonth, type MonthKey } from "@/lib/month";
 
 /**
  * Moves between months. The month lives in the URL, so a particular month can
@@ -15,16 +10,19 @@ import {
  */
 export function MonthSwitcher({
   monthKey,
+  currentKey,
   knownMonths,
 }: {
   monthKey: MonthKey;
+  /** The budget month running today - pay period, not calendar month. */
+  currentKey: MonthKey;
   knownMonths: MonthKey[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
 
   const go = (key: MonthKey) => {
-    router.push(key === currentMonthKey() ? pathname : `${pathname}?m=${key}`);
+    router.push(key === currentKey ? pathname : `${pathname}?m=${key}`);
   };
 
   // Always offer the current month and the two on either side of where we are,
@@ -32,8 +30,8 @@ export function MonthSwitcher({
   const options = [
     ...new Set([
       ...knownMonths,
-      currentMonthKey(),
-      shiftMonth(currentMonthKey(), 1),
+      currentKey,
+      shiftMonth(currentKey, 1),
       shiftMonth(monthKey, -1),
       shiftMonth(monthKey, 1),
       monthKey,

@@ -10,6 +10,8 @@ export type MonthRow = {
   rent: number;
   investec: number;
   notes: string | null;
+  /** Payday that starts this budget month; null = the usual 24th. See lib/period. */
+  period_start?: string | null;
 };
 
 export type BudgetRow = {
@@ -71,6 +73,8 @@ export type IncomeRow = {
 export type MonthSnapshot = {
   monthKey: string;
   month: MonthRow;
+  /** Payday to the day before next payday. Absent only in hand-built fixtures. */
+  period?: { start: string; end: string };
   budgets: BudgetRow[];
   receipts: ReceiptWithItems[];
   fixedExpenses: FixedExpenseRow[];

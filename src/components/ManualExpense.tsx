@@ -7,6 +7,7 @@ import {
   emptyExpense,
   type ExpenseValues,
 } from "@/components/ExpenseForm";
+import { useMonthStarts } from "@/components/BudgetCalendar";
 import type { MonthKey } from "@/lib/month";
 
 /**
@@ -18,7 +19,8 @@ import type { MonthKey } from "@/lib/month";
  * carry line items if the spend is worth breaking up.
  */
 export function ManualExpense({ monthKey }: { monthKey: MonthKey }) {
-  const [values, setValues] = useState<ExpenseValues>(() => emptyExpense(monthKey));
+  const starts = useMonthStarts();
+  const [values, setValues] = useState<ExpenseValues>(() => emptyExpense(monthKey, starts));
   // Remounting the form is how it gets cleared for the next entry.
   const [formKey, setFormKey] = useState(0);
   const [savedMessage, setSavedMessage] = useState<string | null>(null);
@@ -32,7 +34,7 @@ export function ManualExpense({ monthKey }: { monthKey: MonthKey }) {
       storePlaceholder="Parking, barber, birthday present..."
       submitLabel="Save expense"
       onSavedAndContinue={(name) => {
-        setValues(emptyExpense(monthKey));
+        setValues(emptyExpense(monthKey, starts));
         setFormKey((key) => key + 1);
         setSavedMessage(`${name} saved. Ready for the next one.`);
       }}

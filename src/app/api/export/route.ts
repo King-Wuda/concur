@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { getMonthSnapshot, listMonthKeys } from "@/lib/data";
+import { getMonthSnapshot, resolveMonth } from "@/lib/data";
 import { buildWorkbook, buildWorkbookFilename } from "@/lib/excel";
-import { normaliseMonthKey } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -24,12 +23,16 @@ export async function GET(request: NextRequest) {
   }
 
   const scope = request.nextUrl.searchParams.get("scope") === "all" ? "all" : "month";
-  const monthKey = normaliseMonthKey(request.nextUrl.searchParams.get("m") ?? undefined);
+  const { monthKey, months } = await resolveMonth(
+    supabase,
+    user.id,
+    request.nextUrl.searchParams.get("m"),
+  );
 
   try {
     const monthKeys =
       scope === "all"
-        ? ((await listMonthKeys(supabase, user.id)).reverse() ?? [])
+        ? months.map((row) => row.month).reverse()
         : [monthKey];
 
     const keys = monthKeys.length > 0 ? monthKeys : [monthKey];

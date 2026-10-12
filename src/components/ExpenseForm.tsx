@@ -7,13 +7,9 @@ import { saveReceipt, type SaveReceiptInput } from "@/app/actions";
 import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";
-import {
-  dateToMonthKey,
-  defaultDateInMonth,
-  formatMonthLong,
-  isIsoDate,
-  type MonthKey,
-} from "@/lib/month";
+import { useMonthStarts } from "@/components/BudgetCalendar";
+import { formatMonthLong, isIsoDate, type MonthKey } from "@/lib/month";
+import { budgetMonthFor, defaultDateIn, type MonthStart } from "@/lib/period";
 
 /**
  * The fields an expense is confirmed in, whether it came off a photographed
@@ -38,10 +34,13 @@ export type ExpenseValues = {
   items: DraftLineItem[];
 };
 
-export function emptyExpense(monthKey: MonthKey): ExpenseValues {
+export function emptyExpense(
+  monthKey: MonthKey,
+  starts: readonly MonthStart[],
+): ExpenseValues {
   return {
     storeName: "",
-    date: defaultDateInMonth(monthKey),
+    date: defaultDateIn(monthKey, starts),
     total: "",
     category: "Groceries",
     note: "",
@@ -50,11 +49,16 @@ export function emptyExpense(monthKey: MonthKey): ExpenseValues {
 }
 
 /**
- * The month an expense will land in: the one its own date falls in. Shown
- * beside the save button so a receipt from last month says so before it goes.
+ * The budget month an expense will land in: the pay period its own date falls
+ * in, so 25 September is October's. Shown beside the save button so a receipt
+ * from last month says so before it goes.
  */
-export function filingMonth(values: ExpenseValues, fallback: MonthKey): MonthKey {
-  return isIsoDate(values.date) ? dateToMonthKey(values.date) : fallback;
+export function filingMonth(
+  values: ExpenseValues,
+  fallback: MonthKey,
+  starts: readonly MonthStart[],
+): MonthKey {
+  return isIsoDate(values.date) ? budgetMonthFor(values.date, starts) : fallback;
 }
 
 /** Turns what is on screen into what the save action takes. */
@@ -223,6 +227,7 @@ export function ExpenseForm({
   onSavedAndContinue: (savedName: string) => void;
 }) {
   const router = useRouter();
+  const starts = useMonthStarts();
 
   const [values, setValues] = useState<ExpenseValues>(initial);
   const [saving, setSaving] = useState(false);
@@ -287,7 +292,7 @@ export function ExpenseForm({
       </div>
 
       <p className="text-xs text-ink-muted">
-        Saving to {formatMonthLong(filingMonth(values, monthKey))} ·{" "}
+        Saving to {formatMonthLong(filingMonth(values, monthKey, starts))} ·{" "}
         {formatRand(parseRand(values.total))} total
       </p>
     </div>

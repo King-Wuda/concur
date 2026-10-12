@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import * as z from "zod";
 
 import { CATEGORIES } from "@/lib/categories";
-import { ensureMonth } from "@/lib/data";
+import { budgetMonthOf, ensureMonth, listMonths } from "@/lib/data";
 import { round2 } from "@/lib/money";
-import { dateToMonthKey, isIsoDate, isMonthKey } from "@/lib/month";
+import { isIsoDate, isMonthKey, monthKeyToDate, shiftMonth } from "@/lib/month";
+import { budgetMonthFor, paydayProblem } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -75,11 +76,14 @@ export async function saveReceipt(
   try {
     const input = SaveReceiptInput.parse(raw);
     const { supabase, userId } = await session();
-    // An expense belongs to the month it happened in, whichever month happened
-    // to be on screen when it was saved. Filing a pile of September slips on
-    // the 8th of October must not count them against October's budget - nor
-    // quietly rewrite their dates to the 1st, which is what this used to do.
-    const month = await ensureMonth(supabase, userId, dateToMonthKey(input.date));
+    // An expense belongs to the pay period it happened in, whichever month
+    // happened to be on screen when it was saved: anything from payday on the
+    // 24th of September onwards comes out of October's budget (lib/period).
+    const month = await ensureMonth(
+      supabase,
+      userId,
+      await budgetMonthOf(supabase, userId, input.date),
+    );
 
     const inserted = await supabase
       .from("receipts")
@@ -147,7 +151,11 @@ export async function updateReceipt(raw: UpdateReceiptInput): Promise<ActionResu
       if (typeof fields.total === "number") patch.total = round2(fields.total);
       if (fields.date) {
         // Correcting a date can move the expense into another month.
-        const month = await ensureMonth(supabase, userId, dateToMonthKey(fields.date));
+        const month = await ensureMonth(
+          supabase,
+          userId,
+          await budgetMonthOf(supabase, userId, fields.date),
+        );
         patch.month_id = month.id;
       }
 
@@ -391,6 +399,93 @@ export async function saveFixedExpenses(raw: FixedExpensesInput): Promise<Action
   }
 }
 
+const PaydayInput = z.object({
+  monthKey: MonthKeySchema,
+  /** The day salary arrived, or null for the usual 24th of the month before. */
+  payday: DateSchema.nullable(),
+});
+
+export type PaydayInput = z.input<typeof PaydayInput>;
+
+/**
+ * Moves the day a budget month starts - for when salary lands early because
+ * the 24th is a weekend. Receipts and payments either side of the old and new
+ * boundary are re-filed, so the two months always add up to what was spent.
+ */
+export async function savePayday(raw: PaydayInput): Promise<ActionResult> {
+  try {
+    const input = PaydayInput.parse(raw);
+    const { supabase, userId } = await session();
+
+    const before = await listMonths(supabase, userId);
+    if (input.payday) {
+      const problem = paydayProblem(input.monthKey, input.payday, before);
+      if (problem) return { ok: false, error: problem };
+    }
+
+    const month = await ensureMonth(supabase, userId, input.monthKey);
+    const updated = await supabase
+      .from("months")
+      .update({ period_start: input.payday })
+      .eq("id", month.id)
+      .eq("user_id", userId);
+    if (updated.error) {
+      if (updated.error.code === "PGRST204" || updated.error.code === "42703") {
+        throw new Error(
+          "The database is missing the payday column. Run supabase/migrations/0004_pay_cycle.sql in the Supabase SQL editor first.",
+        );
+      }
+      throw updated.error;
+    }
+
+    const starts = [
+      ...before.filter((s) => s.month !== input.monthKey),
+      { month: input.monthKey, periodStart: input.payday },
+    ];
+
+    // Only this month and the one before share the boundary that moved.
+    const neighbours = await supabase
+      .from("months")
+      .select("id, month")
+      .eq("user_id", userId)
+      .in("month", [monthKeyToDate(shiftMonth(input.monthKey, -1)), monthKeyToDate(input.monthKey)]);
+    if (neighbours.error) throw neighbours.error;
+    const keyOf = new Map(
+      ((neighbours.data ?? []) as { id: string; month: string }[]).map((row) => [
+        row.id,
+        row.month.slice(0, 7),
+      ]),
+    );
+    const monthIds = [...keyOf.keys()];
+
+    for (const table of ["receipts", "income"] as const) {
+      const rows = await supabase
+        .from(table)
+        .select("id, month_id, date")
+        .eq("user_id", userId)
+        .in("month_id", monthIds);
+      if (rows.error) throw rows.error;
+
+      for (const row of (rows.data ?? []) as { id: string; month_id: string; date: string }[]) {
+        const target = budgetMonthFor(row.date, starts);
+        if (target === keyOf.get(row.month_id)) continue;
+        const home = await ensureMonth(supabase, userId, target);
+        const moved = await supabase
+          .from(table)
+          .update({ month_id: home.id })
+          .eq("id", row.id)
+          .eq("user_id", userId);
+        if (moved.error) throw moved.error;
+      }
+    }
+
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /* Income                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -409,8 +504,12 @@ export async function saveIncome(raw: IncomeInput): Promise<ActionResult<{ id: s
   try {
     const input = IncomeInput.parse(raw);
     const { supabase, userId } = await session();
-    // Like an expense, income belongs to the month it arrived in.
-    const month = await ensureMonth(supabase, userId, dateToMonthKey(input.date));
+    // Like an expense, income belongs to the pay period it arrived in.
+    const month = await ensureMonth(
+      supabase,
+      userId,
+      await budgetMonthOf(supabase, userId, input.date),
+    );
 
     const inserted = await supabase
       .from("income")
@@ -453,7 +552,11 @@ export async function updateIncome(raw: UpdateIncomeInput): Promise<ActionResult
       const patch = { ...fields } as Record<string, unknown>;
       if (typeof fields.amount === "number") patch.amount = round2(fields.amount);
       if (fields.date) {
-        const month = await ensureMonth(supabase, userId, dateToMonthKey(fields.date));
+        const month = await ensureMonth(
+          supabase,
+          userId,
+          await budgetMonthOf(supabase, userId, fields.date),
+        );
         patch.month_id = month.id;
       }
 

@@ -5,13 +5,9 @@ import { useState } from "react";
 
 import { saveIncome } from "@/app/actions";
 import { formatRand, parseRand } from "@/lib/money";
-import {
-  dateToMonthKey,
-  defaultDateInMonth,
-  formatMonthLong,
-  isIsoDate,
-  type MonthKey,
-} from "@/lib/month";
+import { useMonthStarts } from "@/components/BudgetCalendar";
+import { formatMonthLong, isIsoDate, type MonthKey } from "@/lib/month";
+import { budgetMonthFor, defaultDateIn } from "@/lib/period";
 
 /**
  * Recording money that came in: someone sending money, a refund, a side job.
@@ -27,9 +23,10 @@ import {
  */
 export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
   const router = useRouter();
+  const starts = useMonthStarts();
 
   const [source, setSource] = useState("");
-  const [date, setDate] = useState(() => defaultDateInMonth(monthKey));
+  const [date, setDate] = useState(() => defaultDateIn(monthKey, starts));
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
 
@@ -41,7 +38,7 @@ export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
 
   function clear() {
     setSource("");
-    setDate(defaultDateInMonth(monthKey));
+    setDate(defaultDateIn(monthKey, starts));
     setAmount("");
     setNote("");
   }
@@ -183,7 +180,7 @@ export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
 
       <p className="text-xs text-ink-muted">
         Saving to{" "}
-        {formatMonthLong(isIsoDate(date) ? dateToMonthKey(date) : monthKey)} ·{" "}
+        {formatMonthLong(isIsoDate(date) ? budgetMonthFor(date, starts) : monthKey)} ·{" "}
         {formatRand(parsedAmount)} in
       </p>
     </div>

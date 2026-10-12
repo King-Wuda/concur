@@ -7,9 +7,10 @@ import { MonthSwitcher } from "@/components/MonthSwitcher";
 import { StatTile } from "@/components/StatTile";
 import { SpendPieChart } from "@/components/charts/SpendPieChart";
 import { analyseMonth } from "@/lib/aggregate";
-import { getMonthSnapshot, listMonthKeys } from "@/lib/data";
+import { getMonthSnapshot, resolveMonth } from "@/lib/data";
 import { formatRand, formatRandSigned } from "@/lib/money";
-import { formatMonthLong, normaliseMonthKey } from "@/lib/month";
+import { formatMonthLong } from "@/lib/month";
+import { formatPeriod } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Dashboard - Budget" };
@@ -20,7 +21,6 @@ export default async function DashboardPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const { m } = await searchParams;
-  const monthKey = normaliseMonthKey(m);
 
   const supabase = await createClient();
   const {
@@ -28,10 +28,9 @@ export default async function DashboardPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [snapshot, knownMonths] = await Promise.all([
-    getMonthSnapshot(supabase, user.id, monthKey),
-    listMonthKeys(supabase, user.id),
-  ]);
+  const { monthKey, currentKey, months } = await resolveMonth(supabase, user.id, m);
+  const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
+  const knownMonths = months.map((row) => row.month);
 
   const { categories, totals } = analyseMonth(snapshot);
   const monthHref = (path: string) => `${path}?m=${monthKey}`;
@@ -40,7 +39,14 @@ export default async function DashboardPage({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="sr-only">Dashboard for {formatMonthLong(monthKey)}</h1>
-        <MonthSwitcher monthKey={monthKey} knownMonths={knownMonths} />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <MonthSwitcher monthKey={monthKey} currentKey={currentKey} knownMonths={knownMonths} />
+          {snapshot.period && (
+            <span className="text-sm text-ink-muted tabular">
+              {formatPeriod(snapshot.period)}
+            </span>
+          )}
+        </div>
         <ExportMenu monthKey={monthKey} />
       </div>
 

@@ -26,12 +26,18 @@ sessions, and still exportable to Excel when you want a copy.
   watch, come back as a list to check, and "Save all" files the lot. Then it
   asks whether there is another receipt to add rather than dropping you on the
   dashboard mid-pile.
-- **Filed by their own date.** Every expense and income entry counts against the
-  month on its own date, not whichever month was on screen when it was saved —
-  so catching up on last month's slips puts them in last month. A card in the
-  batch says "Goes to September 2026" when that differs from the month you are
-  looking at, and a receipt with no date on it says so rather than quietly
-  taking today's.
+- **Months run payday to payday.** Salary lands on the 24th, and that is when
+  the next month's budget starts: October runs from 24 September to 23 October.
+  Every expense and income entry is filed under the pay period its own date
+  falls in, not whichever month was on screen when it was saved — so a slip from
+  25 September counts against October, and one from 20 September against
+  September. The dashboard shows the span ("24 Sep – 23 Oct") and the app opens
+  on the pay period running today. When salary comes early or late — the 24th
+  is a Saturday, say — set "Paid on" for that month on the Plan page: receipts
+  either side of the boundary move with it, and the next month is back on the
+  24th. A card in a batch says "Goes to November 2026" when a receipt lands
+  outside the month you are looking at, and a receipt with no date on it says
+  so rather than quietly taking today's.
 - **Scan a receipt.** Pick a photo, a screenshot or a PDF from the device, take
   a fresh photo, or drop a file in. Choosing is the default route: a file input
   that carries `capture` opens a phone's camera and nothing else — no gallery,
@@ -76,7 +82,7 @@ sessions, and still exportable to Excel when you want a copy.
 
 ### 1. Supabase
 
-Create a project at [supabase.com](https://supabase.com), then run the two
+Create a project at [supabase.com](https://supabase.com), then run the
 migrations in `supabase/migrations/` against it, in order. Either paste them
 into the SQL editor in the dashboard, or use the CLI:
 
@@ -88,6 +94,8 @@ supabase db push
 `0001_init.sql` creates the tables, grants the `authenticated` role access to
 them, and locks every one of them down with row level security.
 `0002_storage.sql` creates the private `receipts` bucket and its policies.
+`0003_income.sql` adds money in, and `0004_pay_cycle.sql` adds the per-month
+payday (`months.period_start`, null meaning the usual 24th).
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

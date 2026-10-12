@@ -5,9 +5,9 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { MonthSwitcher } from "@/components/MonthSwitcher";
 import { IncomeList } from "@/components/IncomeList";
 import { ReceiptList } from "@/components/ReceiptList";
-import { getMonthSnapshot, listMonthKeys } from "@/lib/data";
+import { getMonthSnapshot, resolveMonth } from "@/lib/data";
 import { formatRand } from "@/lib/money";
-import { formatMonthLong, normaliseMonthKey } from "@/lib/month";
+import { formatMonthLong } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Activity - Budget" };
@@ -18,7 +18,6 @@ export default async function ReceiptsPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const { m } = await searchParams;
-  const monthKey = normaliseMonthKey(m);
 
   const supabase = await createClient();
   const {
@@ -26,10 +25,9 @@ export default async function ReceiptsPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [snapshot, knownMonths] = await Promise.all([
-    getMonthSnapshot(supabase, user.id, monthKey),
-    listMonthKeys(supabase, user.id),
-  ]);
+  const { monthKey, currentKey, months } = await resolveMonth(supabase, user.id, m);
+  const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
+  const knownMonths = months.map((row) => row.month);
 
   const total = snapshot.receipts.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
   const incomeTotal = snapshot.income.reduce((acc, r) => acc + (Number(r.amount) || 0), 0);
@@ -37,7 +35,7 @@ export default async function ReceiptsPage({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthSwitcher monthKey={monthKey} knownMonths={knownMonths} />
+        <MonthSwitcher monthKey={monthKey} currentKey={currentKey} knownMonths={knownMonths} />
         <ExportMenu monthKey={monthKey} />
       </div>
 

@@ -2,15 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
-  defaultDateInMonth,
-  currentMonthKey,
   dateToMonthKey,
   formatMonthLong,
   formatMonthShort,
   isIsoDate,
   isMonthKey,
   monthKeyToDate,
-  normaliseMonthKey,
   shiftMonth,
 } from "@/lib/month";
 
@@ -27,7 +24,6 @@ test("month keys validate strictly", () => {
   assert.ok(!isMonthKey("2026-00"));
   assert.ok(!isMonthKey("2026-1"));
   assert.ok(!isMonthKey("nonsense"));
-  assert.equal(normaliseMonthKey("rubbish"), currentMonthKey());
 });
 
 test("shiftMonth crosses year boundaries in both directions", () => {
@@ -57,20 +53,4 @@ test("only real calendar dates count as dates", () => {
   assert.ok(!isIsoDate("14/09/2026"));
   assert.ok(!isIsoDate(""));
   assert.ok(!isIsoDate(null));
-});
-
-test("a receipt is filed under the month on its own date", () => {
-  // Was: clamped into whichever month was on screen, rewriting the date.
-  assert.equal(dateToMonthKey("2026-09-29"), "2026-09");
-  assert.equal(dateToMonthKey("2026-10-01"), "2026-10");
-});
-
-test("a typed expense defaults to today, or the 1st for a past month", () => {
-  const someDay = new Date(2026, 8, 14); // 14 September 2026, local time
-  assert.equal(defaultDateInMonth("2026-09", someDay), "2026-09-14");
-  // Catching up on an earlier month: the 1st, not a date outside the month.
-  assert.equal(defaultDateInMonth("2026-08", someDay), "2026-08-01");
-  assert.equal(defaultDateInMonth("2026-10", someDay), "2026-10-01");
-  // Single digits are padded, so the value is a valid date input.
-  assert.equal(defaultDateInMonth("2026-09", new Date(2026, 8, 3)), "2026-09-03");
 });

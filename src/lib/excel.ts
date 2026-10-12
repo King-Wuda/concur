@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 import { analyseMonth, type MonthAnalysis } from "@/lib/aggregate";
 import { formatMonthLong, formatMonthShort } from "@/lib/month";
+import { formatPeriod } from "@/lib/period";
 import type { MonthSnapshot } from "@/lib/types";
 
 /**
@@ -86,7 +87,11 @@ function addMonthSheet(sheet: Sheet, snapshot: MonthSnapshot, analysis: MonthAna
   sheet.getColumn("D").width = 16;
   sheet.getColumn("E").width = 14;
 
-  const title = sheet.addRow([formatMonthLong(snapshot.monthKey)]);
+  const title = sheet.addRow([
+    snapshot.period
+      ? `${formatMonthLong(snapshot.monthKey)} (${formatPeriod(snapshot.period)})`
+      : formatMonthLong(snapshot.monthKey),
+  ]);
   title.font = { bold: true, size: TITLE_SIZE };
   sheet.addRow([]);
 

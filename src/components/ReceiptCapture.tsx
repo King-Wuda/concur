@@ -13,7 +13,9 @@ import {
 } from "@/components/ExpenseForm";
 import { CATEGORY_COLOR_VAR } from "@/lib/categories";
 import { formatRand, parseRand, sum } from "@/lib/money";
-import { defaultDateInMonth, formatMonthLong, type MonthKey } from "@/lib/month";
+import { useMonthStarts } from "@/components/BudgetCalendar";
+import { formatMonthLong, type MonthKey } from "@/lib/month";
+import { defaultDateIn, type MonthStart } from "@/lib/period";
 import { createClient } from "@/lib/supabase/client";
 import type { ExtractedReceipt } from "@/lib/types";
 
@@ -68,6 +70,7 @@ export function ReceiptCapture({
   userId: string;
 }) {
   const router = useRouter();
+  const starts = useMonthStarts();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // The original File for each entry, so a failed one can be retried.
@@ -154,7 +157,7 @@ export function ReceiptCapture({
       status: "uploading",
       imagePath: null,
       extraction: null,
-      values: emptyExpense(monthKey),
+      values: emptyExpense(monthKey, starts),
       error: null,
       dateMissing: false,
     }));
@@ -219,7 +222,7 @@ export function ReceiptCapture({
       update(key, {
         status: "ready",
         extraction: payload.receipt,
-        values: toDraft(payload.receipt, monthKey),
+        values: toDraft(payload.receipt, monthKey, starts),
         dateMissing: payload.receipt.date === null,
       });
     } catch (cause) {
@@ -265,7 +268,7 @@ export function ReceiptCapture({
         done.push({
           name: entry.values.storeName.trim() || "Unknown store",
           total: parseRand(entry.values.total),
-          month: filingMonth(entry.values, monthKey),
+          month: filingMonth(entry.values, monthKey, starts),
         });
       } else {
         failedKeys.push(entry.key);
@@ -598,7 +601,7 @@ function EntryCard({
   onRetry: () => void;
 }) {
   const { status, values, extraction } = entry;
-  const lands = filingMonth(values, monthKey);
+  const lands = filingMonth(values, monthKey, useMonthStarts());
   const otherMonth = status !== "uploading" && status !== "reading" && lands !== monthKey;
   const busy = status === "uploading" || status === "reading" || status === "saving";
   const editable = status === "ready" && !locked;
@@ -772,7 +775,7 @@ function EntryCard({
             </button>
           </div>
           <p className="text-xs text-ink-muted">
-            Will be saved to {formatMonthLong(lands)}, the month on its date.
+            Will be saved to {formatMonthLong(lands)}, the pay period its date falls in.
           </p>
         </div>
       )}
@@ -860,12 +863,17 @@ function CheckIcon() {
 
 /* -------------------------------------------------------------------------- */
 
-function toDraft(receipt: ExtractedReceipt, monthKey: MonthKey): ExpenseValues {
+function toDraft(
+  receipt: ExtractedReceipt,
+  monthKey: MonthKey,
+  starts: readonly MonthStart[],
+): ExpenseValues {
   return {
     storeName: receipt.store_name,
-    // A dateless receipt gets today (or the 1st of a past month); the card
-    // then says so, because the date decides which month it counts against.
-    date: receipt.date ?? defaultDateInMonth(monthKey),
+    // A dateless receipt gets today (or the edge of a month that is not
+    // running); the card then says so, because the date decides which month it
+    // counts against.
+    date: receipt.date ?? defaultDateIn(monthKey, starts),
     total: receipt.total ? String(receipt.total) : "",
     category: receipt.category,
     note: "",

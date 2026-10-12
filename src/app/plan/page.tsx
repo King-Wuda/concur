@@ -5,9 +5,10 @@ import { ExportMenu } from "@/components/ExportMenu";
 import { FixedExpensesForm } from "@/components/FixedExpensesForm";
 import { MonthSummaryForm } from "@/components/MonthSummaryForm";
 import { MonthSwitcher } from "@/components/MonthSwitcher";
+import { PaydayForm } from "@/components/PaydayForm";
 import { analyseMonth } from "@/lib/aggregate";
-import { getMonthSnapshot, listMonthKeys } from "@/lib/data";
-import { formatMonthLong, normaliseMonthKey } from "@/lib/month";
+import { getMonthSnapshot, resolveMonth } from "@/lib/data";
+import { formatMonthLong } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Plan - Budget" };
@@ -18,7 +19,6 @@ export default async function PlanPage({
   searchParams: Promise<{ m?: string }>;
 }) {
   const { m } = await searchParams;
-  const monthKey = normaliseMonthKey(m);
 
   const supabase = await createClient();
   const {
@@ -26,17 +26,16 @@ export default async function PlanPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [snapshot, knownMonths] = await Promise.all([
-    getMonthSnapshot(supabase, user.id, monthKey),
-    listMonthKeys(supabase, user.id),
-  ]);
+  const { monthKey, currentKey, months } = await resolveMonth(supabase, user.id, m);
+  const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
+  const knownMonths = months.map((row) => row.month);
 
   const { categories, totals } = analyseMonth(snapshot);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <MonthSwitcher monthKey={monthKey} knownMonths={knownMonths} />
+        <MonthSwitcher monthKey={monthKey} currentKey={currentKey} knownMonths={knownMonths} />
         <ExportMenu monthKey={monthKey} />
       </div>
 
@@ -49,6 +48,8 @@ export default async function PlanPage({
           A new month starts as a copy of the previous one.
         </p>
       </header>
+
+      <PaydayForm key={`${monthKey}-${snapshot.period?.start}`} monthKey={monthKey} starts={months} />
 
       <MonthSummaryForm monthKey={monthKey} month={snapshot.month} />
 

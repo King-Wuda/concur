@@ -1,7 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { CATEGORIES, type Category } from "@/lib/categories";
-import { monthKeyToDate, type MonthKey } from "@/lib/month";
+import { isMonthKey, monthKeyToDate, type MonthKey } from "@/lib/month";
+import { budgetMonthFor, periodFor, todayInSouthAfrica, type MonthStart } from "@/lib/period";
 import type {
   BudgetRow,
   FixedExpenseRow,
@@ -239,9 +240,12 @@ export async function getMonthSnapshot(
     line_items: [...(receipt.line_items ?? [])].sort((a, b) => a.position - b.position),
   }));
 
+  const starts = await listMonths(supabase, userId);
+
   return {
     monthKey,
     month,
+    period: periodFor(monthKey, starts),
     budgets: sortBudgets(budgets),
     receipts,
     fixedExpenses: (fixedResult.data ?? []) as FixedExpenseRow[],
@@ -256,14 +260,55 @@ function sortBudgets(budgets: BudgetRow[]): BudgetRow[] {
   );
 }
 
-/** Every month the user has data for, newest first, as "YYYY-MM" keys. */
-export async function listMonthKeys(supabase: DB, userId: string): Promise<MonthKey[]> {
-  const { data, error } = await supabase
+/**
+ * Every month the user has data for, newest first, with its payday if it moved.
+ * Works before migration 0004 has been run too: without the column every month
+ * simply has the usual payday.
+ */
+export async function listMonths(supabase: DB, userId: string): Promise<MonthStart[]> {
+  const withPayday = await supabase
     .from("months")
-    .select("month")
+    .select("month, period_start")
     .eq("user_id", userId)
     .order("month", { ascending: false });
 
-  if (error) throw error;
-  return ((data ?? []) as { month: string }[]).map((row) => row.month.slice(0, 7));
+  let rows = withPayday.data as { month: string; period_start?: string | null }[] | null;
+  if (withPayday.error) {
+    if (withPayday.error.code !== "42703") throw withPayday.error; // undefined_column
+    const plain = await supabase
+      .from("months")
+      .select("month")
+      .eq("user_id", userId)
+      .order("month", { ascending: false });
+    if (plain.error) throw plain.error;
+    rows = plain.data as { month: string }[];
+  }
+
+  return (rows ?? []).map((row) => ({
+    month: row.month.slice(0, 7),
+    periodStart: row.period_start ?? null,
+  }));
+}
+
+/** The budget month a receipt or payment dated `date` is filed under. */
+export async function budgetMonthOf(
+  supabase: DB,
+  userId: string,
+  date: string,
+): Promise<MonthKey> {
+  return budgetMonthFor(date, await listMonths(supabase, userId));
+}
+
+/**
+ * Which budget month a page shows: the one in the URL, or else the pay period
+ * running today - so on 25 September the app opens on October.
+ */
+export async function resolveMonth(
+  supabase: DB,
+  userId: string,
+  requested: string | undefined | null,
+): Promise<{ monthKey: MonthKey; currentKey: MonthKey; months: MonthStart[] }> {
+  const months = await listMonths(supabase, userId);
+  const currentKey = budgetMonthFor(todayInSouthAfrica(), months);
+  return { monthKey: isMonthKey(requested) ? requested : currentKey, currentKey, months };
 }

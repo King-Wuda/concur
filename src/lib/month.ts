@@ -21,11 +21,6 @@ export function dateToMonthKey(date: string): MonthKey {
   return date.slice(0, 7);
 }
 
-/** The current month in the browser's / server's local time. */
-export function currentMonthKey(now: Date = new Date()): MonthKey {
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-}
-
 /** Shifts a month key by `delta` months. shiftMonth("2026-01", -1) === "2025-12". */
 export function shiftMonth(key: MonthKey, delta: number): MonthKey {
   const [year, month] = key.split("-").map(Number);
@@ -39,7 +34,7 @@ export function shiftMonth(key: MonthKey, delta: number): MonthKey {
  * the browser ship different ICU data, and the two must agree exactly or
  * hydration fails.
  */
-const MONTH_NAMES = [
+export const MONTH_NAMES = [
   "January",
   "February",
   "March",
@@ -64,24 +59,6 @@ export function formatMonthLong(key: MonthKey): string {
 export function formatMonthShort(key: MonthKey): string {
   const [year, month] = key.split("-").map(Number);
   return `${(MONTH_NAMES[month - 1] ?? key).slice(0, 3)} ${year}`;
-}
-
-/**
- * A sensible default date for something entered by hand into `key`'s month:
- * today when today falls inside it, otherwise the first of the month. Someone
- * typing an expense is usually recording what they just spent, but may be
- * catching up on a month that has already ended.
- */
-export function defaultDateInMonth(key: MonthKey, now: Date = new Date()): string {
-  if (currentMonthKey(now) !== key) return monthKeyToDate(key);
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-  return `${now.getFullYear()}-${month}-${day}`;
-}
-
-/** Falls back to today's month for missing or malformed input. */
-export function normaliseMonthKey(value: unknown): MonthKey {
-  return isMonthKey(value) ? value : currentMonthKey();
 }
 
 /**

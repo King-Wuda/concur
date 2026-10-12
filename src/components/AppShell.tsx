@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 
-import { currentMonthKey, formatMonthShort, normaliseMonthKey } from "@/lib/month";
+import { formatMonthShort, isMonthKey, type MonthKey } from "@/lib/month";
+import { budgetMonthFor, todayInSouthAfrica } from "@/lib/period";
 
 /**
  * Header, navigation and page frame. The month currently being worked on lives
@@ -20,14 +21,19 @@ const TABS = [
 
 export function AppShell({
   userEmail,
+  currentKey,
   children,
 }: {
   userEmail: string | null;
+  /** The budget month running today, worked out from the stored paydays. */
+  currentKey: MonthKey | null;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const monthKey = normaliseMonthKey(searchParams.get("m") ?? undefined);
+  const picked = searchParams.get("m");
+  const thisMonth = currentKey ?? budgetMonthFor(todayInSouthAfrica(), []);
+  const monthKey = isMonthKey(picked) ? picked : thisMonth;
 
   const isAuthPage = pathname === "/login" || pathname.startsWith("/auth");
 
@@ -36,7 +42,7 @@ export function AppShell({
   }
 
   const withMonth = (href: string) =>
-    monthKey === currentMonthKey() ? href : `${href}?m=${monthKey}`;
+    monthKey === thisMonth ? href : `${href}?m=${monthKey}`;
 
   return (
     <div className="flex min-h-dvh flex-col">
