@@ -17,6 +17,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Opened from the home screen, the page runs edge to edge; the bottom nav
+  // pads itself with env(safe-area-inset-bottom) to clear the home indicator,
+  // which only has a value with viewport-fit=cover.
+  viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f9f9f7" },
     { media: "(prefers-color-scheme: dark)", color: "#0d0d0d" },
