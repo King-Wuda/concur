@@ -53,6 +53,11 @@ sessions, and still exportable to Excel when you want a copy.
 - **Budget vs actual.** Set a budget per category per month and watch a meter
   fill. Anything past the budget is drawn in the critical colour and labelled
   "Over" — colour never carries that meaning on its own.
+- **Deficit from last month.** When a month ends overspent, type the shortfall
+  into "Deficit from last month" under Miscellaneous on the next month's Plan
+  (or tap "Use R…" to take it from how last month actually ended). It comes off
+  what that month has left, without counting as any category's spending, and
+  is not copied into later months.
 - **Savings view.** Everything that came in, minus everything out the door, and
   how far ahead of or behind the plan the month is running.
 - **The summary block.** Salary, salary after tax, tithe (with a one-tap 10%),
@@ -94,8 +99,9 @@ supabase db push
 `0001_init.sql` creates the tables, grants the `authenticated` role access to
 them, and locks every one of them down with row level security.
 `0002_storage.sql` creates the private `receipts` bucket and its policies.
-`0003_income.sql` adds money in, and `0004_pay_cycle.sql` adds the per-month
-payday (`months.period_start`, null meaning the usual 24th).
+`0003_income.sql` adds money in, `0004_pay_cycle.sql` adds the per-month
+payday (`months.period_start`, null meaning the usual 24th), and
+`0005_deficit.sql` adds the deficit carried in from the month before.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one
