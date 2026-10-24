@@ -295,6 +295,8 @@ export async function saveMonthSummary(raw: MonthSummaryInput): Promise<ActionRe
 const BudgetsInput = z.object({
   monthKey: MonthKeySchema,
   budgets: z.array(z.object({ category: CategorySchema, budgeted_amount: AmountSchema })),
+  /** Last month's overspend to pay back. Only sent when it was changed. */
+  deficit: z.coerce.number().finite().min(0).max(10_000_000).optional(),
 });
 
 export type BudgetsInput = z.input<typeof BudgetsInput>;
@@ -304,6 +306,22 @@ export async function saveBudgets(raw: BudgetsInput): Promise<ActionResult> {
     const input = BudgetsInput.parse(raw);
     const { supabase, userId } = await session();
     const month = await ensureMonth(supabase, userId, input.monthKey);
+
+    if (input.deficit !== undefined) {
+      const updated = await supabase
+        .from("months")
+        .update({ deficit: round2(input.deficit) })
+        .eq("id", month.id)
+        .eq("user_id", userId);
+      if (updated.error) {
+        if (updated.error.code === "PGRST204" || updated.error.code === "42703") {
+          throw new Error(
+            "The database is missing the deficit column. Run supabase/migrations/0005_deficit.sql in the Supabase SQL editor first.",
+          );
+        }
+        throw updated.error;
+      }
+    }
 
     const { error } = await supabase.from("budgets").upsert(
       input.budgets.map((budget) => ({

@@ -12,6 +12,8 @@ export type MonthRow = {
   notes: string | null;
   /** Payday that starts this budget month; null = the usual 24th. See lib/period. */
   period_start?: string | null;
+  /** Overspend carried in from last month; absent before migration 0005. */
+  deficit?: number;
 };
 
 export type BudgetRow = {

@@ -167,6 +167,13 @@ export default async function DashboardPage({
             />
             <SummaryRow label="Rent" value={totals.rent} />
             <SummaryRow label="Investec" value={totals.investec} />
+            {totals.deficit > 0 && (
+              <SummaryRow
+                label="Deficit from last month"
+                value={totals.deficit}
+                detail="Last month's overspend, paid back"
+              />
+            )}
             <SummaryRow label="Subscriptions & fixed" value={totals.fixedTotal} />
             <div className="border-t border-line pt-2">
               <SummaryRow label="Total spend" value={totals.totalSpend} strong />

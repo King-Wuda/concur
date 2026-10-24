@@ -8,7 +8,7 @@ import { MonthSwitcher } from "@/components/MonthSwitcher";
 import { PaydayForm } from "@/components/PaydayForm";
 import { analyseMonth } from "@/lib/aggregate";
 import { getMonthSnapshot, resolveMonth } from "@/lib/data";
-import { formatMonthLong } from "@/lib/month";
+import { formatMonthLong, shiftMonth } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Plan - Budget" };
@@ -31,6 +31,19 @@ export default async function PlanPage({
   const knownMonths = months.map((row) => row.month);
 
   const { categories, totals } = analyseMonth(snapshot);
+
+  // How last month ended, so its overspend can be carried in as a deficit.
+  // Only read if it exists: opening it would otherwise create an empty month.
+  const previousKey = shiftMonth(monthKey, -1);
+  const previousMonth = months.some((row) => row.month === previousKey)
+    ? {
+        name: formatMonthLong(previousKey),
+        shortfall: Math.max(
+          -analyseMonth(await getMonthSnapshot(supabase, user.id, previousKey)).totals.remaining,
+          0,
+        ),
+      }
+    : null;
 
   return (
     <div className="space-y-6">
@@ -59,6 +72,8 @@ export default async function PlanPage({
         categories={categories}
         salaryAfterTax={totals.salaryAfterTax}
         committedTotal={totals.committedTotal}
+        deficit={totals.deficit}
+        previousMonth={previousMonth}
       />
 
       <FixedExpensesForm monthKey={monthKey} items={snapshot.fixedExpenses} />

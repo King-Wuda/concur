@@ -23,12 +23,18 @@ export function BudgetsForm({
   categories,
   salaryAfterTax,
   committedTotal,
+  deficit: savedDeficit,
+  previousMonth,
 }: {
   monthKey: MonthKey;
   budgets: BudgetRow[];
   categories: CategoryTotal[];
   salaryAfterTax: number;
   committedTotal: number;
+  /** Overspend from last month already recorded against this one. */
+  deficit: number;
+  /** How last month ended, to offer its shortfall as the deficit. */
+  previousMonth: { name: string; shortfall: number } | null;
 }) {
   const router = useRouter();
 
@@ -43,12 +49,16 @@ export function BudgetsForm({
     );
   });
 
+  const [deficit, setDeficit] = useState(savedDeficit === 0 ? "" : String(round2(savedDeficit)));
+  const parsedDeficit = round2(Math.max(parseRand(deficit), 0));
+  const deficitChanged = Math.abs(parsedDeficit - savedDeficit) >= 0.01;
+
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
 
   const actualByCategory = new Map(categories.map((c) => [c.category, c.actual]));
   const budgetTotal = sum(CATEGORIES.map((category) => parseRand(amounts[category])));
-  const unallocated = round2(salaryAfterTax - committedTotal - budgetTotal);
+  const unallocated = round2(salaryAfterTax - committedTotal - parsedDeficit - budgetTotal);
 
   async function save() {
     setStatus("saving");
@@ -60,6 +70,9 @@ export function BudgetsForm({
         category,
         budgeted_amount: parseRand(amounts[category]),
       })),
+      // Left out when untouched, so budgets still save on a database that has
+      // not had migration 0005 yet.
+      ...(deficitChanged ? { deficit: parsedDeficit } : {}),
     });
 
     if (!result.ok) {
@@ -117,6 +130,30 @@ export function BudgetsForm({
             />
           );
         })}
+
+        {/* Sits after Miscellaneous: not a category to spend from, but money
+            this month owes before any category gets a rand. */}
+        <MoneyField
+          id="deficit"
+          label="Deficit from last month"
+          value={deficit}
+          onChange={setDeficit}
+          hint={
+            previousMonth && previousMonth.shortfall > 0
+              ? `${previousMonth.name} ended ${formatRand(previousMonth.shortfall)} overspent`
+              : "Overspend from last month, paid back out of this one"
+          }
+          action={
+            previousMonth &&
+            previousMonth.shortfall > 0 &&
+            Math.abs(previousMonth.shortfall - parseRand(deficit)) >= 0.01
+              ? {
+                  label: `Use ${formatRand(previousMonth.shortfall)}`,
+                  onClick: () => setDeficit(String(previousMonth.shortfall)),
+                }
+              : undefined
+          }
+        />
       </div>
 
       <dl className="space-y-1.5 rounded-lg bg-sunken p-3 text-sm">
@@ -128,6 +165,12 @@ export function BudgetsForm({
           <dt>Fixed commitments (tithe, rent, Investec)</dt>
           <dd className="tabular">{formatRand(committedTotal)}</dd>
         </div>
+        {parsedDeficit > 0 && (
+          <div className="flex justify-between gap-3">
+            <dt>Deficit from last month</dt>
+            <dd className="tabular">{formatRand(parsedDeficit)}</dd>
+          </div>
+        )}
         <div className="flex justify-between gap-3 border-t border-line pt-1.5">
           <dt className="font-semibold">
             {unallocated < 0 ? "Over-allocated" : "Left to save if the plan holds"}

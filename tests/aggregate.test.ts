@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import { analyseMonth } from "@/lib/aggregate";
 import type { Category } from "@/lib/categories";
+import { round2 } from "@/lib/money";
 import type {
   BudgetRow,
   FixedExpenseRow,
@@ -409,4 +410,38 @@ test("with nothing negative, the two spend totals agree", () => {
   );
   assert.equal(analysis.totals.positiveSpendTotal, analysis.totals.categoryActualTotal);
   assert.equal(analysis.categories.find((c) => c.category === "Groceries")!.share, 100);
+});
+
+test("a deficit from last month comes off what is left, not off any category", () => {
+  const base = {
+    budgets: [budget("Groceries", 4_000), budget("Miscellaneous", 1_000)],
+    receipts: [receipt("r1", 3_000, "Groceries", [item("Shop", 3_000, "Groceries")])],
+  };
+  const before = analyseMonth(
+    snapshot({ ...base, month: month({ salary_after_tax: 30_000, rent: 10_000 }) }),
+  ).totals;
+  const analysis = analyseMonth(
+    snapshot({
+      ...base,
+      month: month({ salary_after_tax: 30_000, rent: 10_000, deficit: 5_650.52 }),
+    }),
+  );
+  const t = analysis.totals;
+
+  assert.equal(t.deficit, 5_650.52);
+  assert.equal(t.remaining, round2(before.remaining - 5_650.52));
+  assert.equal(t.plannedRemaining, round2(before.plannedRemaining - 5_650.52));
+  assert.equal(t.totalSpend, round2(before.totalSpend + 5_650.52));
+  // Paying back last month is not this month's grocery or misc spending.
+  assert.equal(t.categoryActualTotal, before.categoryActualTotal);
+  assert.equal(actualFor(analysis, "Miscellaneous"), 0);
+  assert.deepEqual(t.overspentCategories, []);
+  // And it does not move how the month is tracking against its own budgets.
+  assert.equal(t.savingsVsPlan, before.savingsVsPlan);
+});
+
+test("a month from before the deficit column counts none", () => {
+  const t = analyseMonth(snapshot({ month: month({ salary_after_tax: 1_000 }) })).totals;
+  assert.equal(t.deficit, 0);
+  assert.equal(t.remaining, 1_000);
 });

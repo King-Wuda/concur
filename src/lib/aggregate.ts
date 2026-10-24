@@ -55,7 +55,9 @@ export type MonthTotals = {
   positiveSpendTotal: number;
   /** Tithe + rent + Investec: the summary block's committed outflows. */
   committedTotal: number;
-  /** Every rand out the door this month. */
+  /** Last month's overspend, paid back out of this month's money. */
+  deficit: number;
+  /** Every rand out the door this month, including paying back a deficit. */
   totalSpend: number;
 
   /** Sum of the per-category budgets. */
@@ -163,6 +165,9 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
   const investec = round2(Number(month.investec) || 0);
 
   const committedTotal = round2(tithe + rent + investec);
+  // Last month's shortfall is spent before this month starts: it lowers what
+  // is left exactly as an expense would, but it is no category's spending.
+  const deficit = round2(Number(month.deficit) || 0);
 
   // Income sits outside the categories on purpose: it is money to spend, not
   // spending, so it raises what is available rather than reducing any
@@ -173,8 +178,10 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
   const receiptsTotal = sum(receipts.map((r) => Number(r.total) || 0));
   const budgetTotal = sum(CATEGORIES.map((c) => budgetByCategory[c]));
 
-  const totalSpend = round2(committedTotal + categoryActualTotal + fixedExcludedTotal);
-  const plannedSpend = round2(committedTotal + budgetTotal + fixedExcludedTotal);
+  const totalSpend = round2(
+    committedTotal + deficit + categoryActualTotal + fixedExcludedTotal,
+  );
+  const plannedSpend = round2(committedTotal + deficit + budgetTotal + fixedExcludedTotal);
 
   const overspent = categories.filter((c) => c.isOver);
 
@@ -196,6 +203,7 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
       categoryActualTotal,
       positiveSpendTotal,
       committedTotal,
+      deficit,
       totalSpend,
       budgetTotal,
       plannedSpend,
