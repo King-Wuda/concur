@@ -108,7 +108,7 @@ export function DayEditor({ day, canDelete }: { day: WorkoutDayRow; canDelete: b
       <ol className="space-y-2">
         {rows.map((row, index) => (
           <li key={row.key} className="rounded-lg bg-sunken p-3">
-            <div className="grid grid-cols-[1fr_auto] gap-2 sm:grid-cols-[1fr_11rem_5rem_auto]">
+            <div className="grid grid-cols-[1fr_6.5rem] gap-2 sm:grid-cols-[1fr_13rem_6.5rem_auto]">
               <div className="col-span-2 sm:col-span-1">
                 <label className="sr-only" htmlFor={`${row.key}-name`}>
                   Exercise {index + 1}
@@ -142,13 +142,21 @@ export function DayEditor({ day, canDelete }: { day: WorkoutDayRow; canDelete: b
                 <label className="sr-only" htmlFor={`${row.key}-sets`}>
                   Sets for {row.name || `exercise ${index + 1}`}
                 </label>
-                <input
-                  id={`${row.key}-sets`}
-                  className="field tabular"
-                  inputMode="numeric"
-                  value={row.sets}
-                  onChange={(event) => change(row.key, { sets: event.target.value })}
-                />
+                <div className="relative">
+                  <input
+                    id={`${row.key}-sets`}
+                    className="field tabular !pr-11"
+                    inputMode="numeric"
+                    value={row.sets}
+                    onChange={(event) => change(row.key, { sets: event.target.value })}
+                  />
+                  <span
+                    aria-hidden
+                    className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-ink-muted"
+                  >
+                    sets
+                  </span>
+                </div>
               </div>
               <div className="col-span-2 flex items-center gap-1 sm:col-span-1">
                 <button
