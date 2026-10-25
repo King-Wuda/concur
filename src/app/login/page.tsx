@@ -1,6 +1,6 @@
 import { PasswordForm } from "@/components/PasswordForm";
 
-export const metadata = { title: "Sign in - Budget" };
+export const metadata = { title: "Sign in - Concur" };
 
 export default async function LoginPage({
   searchParams,

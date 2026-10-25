@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
-import { saveReceipt } from "@/app/actions";
+import { saveReceipt } from "@/app/budget/actions";
 import {
   ExpenseFields,
   emptyExpense,
@@ -374,7 +374,7 @@ export function ReceiptCapture({
             <button
               type="button"
               className="btn"
-              onClick={() => router.push(`/?m=${monthKey}`)}
+              onClick={() => router.push(`/budget?m=${monthKey}`)}
             >
               No, go to dashboard
             </button>

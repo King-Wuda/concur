@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { savePayday } from "@/app/actions";
+import { savePayday } from "@/app/budget/actions";
 import { SaveBar } from "@/components/SaveBar";
 import {
   formatMonthLong,

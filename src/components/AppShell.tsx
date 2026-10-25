@@ -7,17 +7,50 @@ import { formatMonthShort, isMonthKey, type MonthKey } from "@/lib/month";
 import { budgetMonthFor, todayInSouthAfrica } from "@/lib/period";
 
 /**
- * Header, navigation and page frame. The month currently being worked on lives
- * in the `m` query parameter, and every nav link carries it forward so
- * switching tabs never loses your place.
+ * Header, navigation and page frame.
+ *
+ * The app is a set of sections - Budget, Workouts - with Home as the hub
+ * between them. Inside a section the navigation shows that section's own
+ * pages; on a phone they sit in the bottom bar with Home first, so getting back
+ * to the hub is always one thumb away.
+ *
+ * In Budget, the month being worked on lives in the `m` query parameter, and
+ * every Budget link carries it forward so switching tabs never loses your
+ * place.
  */
 
-const TABS = [
-  { href: "/", label: "Dashboard", icon: ChartIcon },
-  { href: "/capture", label: "Add", icon: CameraIcon },
-  { href: "/receipts", label: "Receipts", icon: ReceiptIcon },
-  { href: "/plan", label: "Plan", icon: SlidersIcon },
-] as const;
+type Tab = { href: string; label: string; icon: () => React.JSX.Element };
+
+const HOME: Tab = { href: "/", label: "Home", icon: HomeIcon };
+
+const SECTIONS: { id: string; label: string; href: string; tabs: Tab[] }[] = [
+  {
+    id: "budget",
+    label: "Budget",
+    href: "/budget",
+    tabs: [
+      { href: "/budget", label: "Dashboard", icon: ChartIcon },
+      { href: "/budget/add", label: "Add", icon: CameraIcon },
+      { href: "/budget/receipts", label: "Receipts", icon: ReceiptIcon },
+      { href: "/budget/plan", label: "Plan", icon: SlidersIcon },
+    ],
+  },
+  {
+    id: "workouts",
+    label: "Workouts",
+    href: "/workouts",
+    tabs: [
+      { href: "/workouts", label: "Train", icon: DumbbellIcon },
+      { href: "/workouts/history", label: "History", icon: ListIcon },
+      { href: "/workouts/plan", label: "Plan", icon: SlidersIcon },
+    ],
+  },
+];
+
+const SECTION_ICONS: Record<string, () => React.JSX.Element> = {
+  budget: ChartIcon,
+  workouts: DumbbellIcon,
+};
 
 export function AppShell({
   userEmail,
@@ -41,24 +74,54 @@ export function AppShell({
     return <main className="mx-auto w-full max-w-md px-4 py-10">{children}</main>;
   }
 
-  const withMonth = (href: string) =>
-    monthKey === thisMonth ? href : `${href}?m=${monthKey}`;
+  const section = SECTIONS.find((s) => isActive(pathname, s.href)) ?? null;
+  const inBudget = section?.id === "budget";
+
+  // Only Budget pages know about months; elsewhere links stay clean.
+  const link = (href: string) =>
+    href.startsWith("/budget") && monthKey !== thisMonth ? `${href}?m=${monthKey}` : href;
+
+  // Bottom bar on a phone: the hub's sections, or Home plus this section's pages.
+  const bottomTabs: Tab[] = section
+    ? [HOME, ...section.tabs]
+    : [HOME, ...SECTIONS.map((s) => ({ href: s.href, label: s.label, icon: SECTION_ICONS[s.id] }))];
 
   return (
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-page/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-3 px-4 py-3">
-          <Link href={withMonth("/")} className="flex items-center gap-2 font-semibold">
+          <Link href="/" className="flex items-center gap-2 font-semibold">
             <span
               aria-hidden
               className="inline-block size-2.5 rounded-full"
               style={{ background: "var(--accent)" }}
             />
-            Budget
+            {section ? section.label : "Concur"}
           </Link>
-          <span className="text-sm text-ink-muted tabular">
-            {formatMonthShort(monthKey)}
-          </span>
+          {inBudget && (
+            <span className="text-sm text-ink-muted tabular">{formatMonthShort(monthKey)}</span>
+          )}
+
+          <nav aria-label="Sections" className="ml-4 hidden items-center gap-1 sm:flex">
+            {[HOME, ...SECTIONS.map((s) => ({ href: s.href, label: s.label, icon: HomeIcon }))].map(
+              (item) => {
+                const active =
+                  item.href === "/" ? pathname === "/" : isActive(pathname, item.href);
+                return (
+                  <Link
+                    key={item.href}
+                    href={link(item.href)}
+                    aria-current={active ? "page" : undefined}
+                    className={`rounded-lg px-2.5 py-1 text-sm font-medium ${
+                      active ? "text-ink" : "text-ink-secondary hover:text-ink"
+                    }`}
+                  >
+                    {item.label}
+                  </Link>
+                );
+              },
+            )}
+          </nav>
 
           <div className="ml-auto flex items-center gap-1">
             <ThemeToggle />
@@ -74,25 +137,27 @@ export function AppShell({
           </div>
         </div>
 
-        <nav
-          aria-label="Sections"
-          className="mx-auto hidden w-full max-w-5xl gap-1 px-4 pb-2 sm:flex"
-        >
-          {TABS.map((tab) => (
-            <Link
-              key={tab.href}
-              href={withMonth(tab.href)}
-              aria-current={isActive(pathname, tab.href) ? "page" : undefined}
-              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                isActive(pathname, tab.href)
-                  ? "bg-sunken text-ink"
-                  : "text-ink-secondary hover:text-ink"
-              }`}
-            >
-              {tab.label}
-            </Link>
-          ))}
-        </nav>
+        {section && (
+          <nav
+            aria-label={`${section.label} pages`}
+            className="mx-auto hidden w-full max-w-5xl gap-1 px-4 pb-2 sm:flex"
+          >
+            {section.tabs.map((tab) => (
+              <Link
+                key={tab.href}
+                href={link(tab.href)}
+                aria-current={isTabActive(pathname, tab.href, section.href) ? "page" : undefined}
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                  isTabActive(pathname, tab.href, section.href)
+                    ? "bg-sunken text-ink"
+                    : "text-ink-secondary hover:text-ink"
+                }`}
+              >
+                {tab.label}
+              </Link>
+            ))}
+          </nav>
+        )}
       </header>
 
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 pb-24 pt-4 sm:pb-10">
@@ -101,17 +166,22 @@ export function AppShell({
 
       {/* Thumb-reachable navigation on a phone. */}
       <nav
-        aria-label="Sections"
+        aria-label="Pages"
         className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] sm:hidden"
       >
         <ul className="mx-auto flex max-w-lg">
-          {TABS.map((tab) => {
+          {bottomTabs.map((tab) => {
             const Icon = tab.icon;
-            const active = isActive(pathname, tab.href);
+            const active =
+              tab.href === "/"
+                ? pathname === "/"
+                : section
+                  ? isTabActive(pathname, tab.href, section.href)
+                  : isActive(pathname, tab.href);
             return (
               <li key={tab.href} className="flex-1">
                 <Link
-                  href={withMonth(tab.href)}
+                  href={link(tab.href)}
                   aria-current={active ? "page" : undefined}
                   className={`flex min-h-14 flex-col items-center justify-center gap-1 text-[0.6875rem] font-medium ${
                     active ? "text-accent" : "text-ink-muted"
@@ -129,8 +199,13 @@ export function AppShell({
   );
 }
 
+/** A section's own root tab is active only on that exact page, not its children. */
+function isTabActive(pathname: string, href: string, sectionHref: string) {
+  return href === sectionHref ? pathname === href : isActive(pathname, href);
+}
+
 function isActive(pathname: string, href: string) {
-  return href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
 }
 
 /**
@@ -214,6 +289,30 @@ function SlidersIcon() {
       <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
       <circle cx="16" cy="7" r="2" />
       <circle cx="10" cy="17" r="2" />
+    </svg>
+  );
+}
+
+function HomeIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M4 10.5 12 4l8 6.5V20h-5v-6h-6v6H4Z" />
+    </svg>
+  );
+}
+
+function DumbbellIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" />
+    </svg>
+  );
+}
+
+function ListIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M9 7h11M9 12h11M9 17h11M4.5 7h.01M4.5 12h.01M4.5 17h.01" />
     </svg>
   );
 }

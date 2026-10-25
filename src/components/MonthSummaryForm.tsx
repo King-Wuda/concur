@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveMonthSummary } from "@/app/actions";
+import { saveMonthSummary } from "@/app/budget/actions";
 import { MoneyField } from "@/components/MoneyField";
 import { SaveBar } from "@/components/SaveBar";
 import { formatRand, parseRand, round2 } from "@/lib/money";

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveReceipt, type SaveReceiptInput } from "@/app/actions";
+import { saveReceipt, type SaveReceiptInput } from "@/app/budget/actions";
 import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
 import { CATEGORIES, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";
@@ -250,7 +250,7 @@ export function ExpenseForm({
       return;
     }
 
-    router.push(`/?m=${monthKey}`);
+    router.push(`/budget?m=${monthKey}`);
     router.refresh();
   }
 

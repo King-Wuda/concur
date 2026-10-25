@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deleteIncome, updateIncome } from "@/app/actions";
+import { deleteIncome, updateIncome } from "@/app/budget/actions";
 import { formatRand, parseRand, round2 } from "@/lib/money";
 import type { IncomeRow } from "@/lib/types";
 

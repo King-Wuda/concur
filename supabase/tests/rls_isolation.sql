@@ -66,6 +66,36 @@ values (
   'Mum', '2026-09-05', 1500
 );
 
+insert into public.workout_days (id, user_id, code, name)
+values (
+  '55555555-5555-5555-5555-555555555555',
+  '11111111-1111-1111-1111-111111111111',
+  'A', 'Workout A'
+);
+
+insert into public.workout_exercises (user_id, day_id, name, scheme, sets)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  '55555555-5555-5555-5555-555555555555',
+  'Incline bench', 'RPT', 3
+);
+
+insert into public.workout_sessions (id, user_id, day_id, day_code, day_name, date)
+values (
+  '66666666-6666-6666-6666-666666666666',
+  '11111111-1111-1111-1111-111111111111',
+  '55555555-5555-5555-5555-555555555555',
+  'A', 'Workout A', '2026-10-20'
+);
+
+insert into public.workout_sets
+  (user_id, session_id, exercise_name, scheme, set_number, target, weight_kg, reps)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  '66666666-6666-6666-6666-666666666666',
+  'Incline bench', 'RPT', 1, '4-6', 60, 6
+);
+
 -- --------------------------------------------------------------------------
 -- The owner sees their own rows.
 -- --------------------------------------------------------------------------
@@ -92,6 +122,12 @@ begin
   if (select count(*) from public.income) <> 1 then
     raise exception 'owner cannot see their own income';
   end if;
+  if (select count(*) from public.workout_days) <> 1
+     or (select count(*) from public.workout_exercises) <> 1
+     or (select count(*) from public.workout_sessions) <> 1
+     or (select count(*) from public.workout_sets) <> 1 then
+    raise exception 'owner cannot see their own workouts';
+  end if;
   raise notice 'PASS  owner sees their own rows';
 end $$;
 
@@ -105,7 +141,10 @@ declare
   t text;
   visible integer;
 begin
-  foreach t in array array['months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income']
+  foreach t in array array[
+    'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
+    'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets'
+  ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
     if visible <> 0 then
@@ -147,6 +186,18 @@ begin
     raise exception 'another user updated % income row(s)', affected;
   end if;
 
+  update public.workout_sets set reps = 99;
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user updated % workout set row(s)', affected;
+  end if;
+
+  delete from public.workout_sessions where id = '66666666-6666-6666-6666-666666666666';
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user deleted % workout session row(s)', affected;
+  end if;
+
   raise notice 'PASS  another user cannot update or delete';
 end $$;
 
@@ -168,6 +219,15 @@ begin
   exception
     when insufficient_privilege then
       raise notice 'PASS  another user cannot write under someone else''s id';
+  end;
+
+  begin
+    insert into public.workout_sessions (user_id, day_code, day_name, date)
+    values ('11111111-1111-1111-1111-111111111111', 'A', 'Planted', '2026-10-21');
+    raise exception 'another user planted a workout under the owner''s id';
+  exception
+    when insufficient_privilege then
+      raise notice 'PASS  another user cannot plant a workout under someone else''s id';
   end;
 end $$;
 

@@ -1,14 +1,44 @@
-# Budget
+# Concur
 
-A personal monthly budgeting app for South African rand. Photograph a till slip
-from your phone, Claude reads every line item off it, you confirm, and the spend
-lands in the month's budget straight away.
+A personal app for planning and tracking the parts of life worth keeping an eye
+on, one section each, with a Home hub that shows where each one stands today.
 
-It replaces a spreadsheet with a monthly tab per month: the same summary block
-and the same six categories, but always available, always consistent between
-sessions, and still exportable to Excel when you want a copy.
+- **Budget** (`/budget`): monthly budgeting in rand. Photograph a till slip,
+  Claude reads every line item off it, you confirm, and the spend lands in the
+  month's budget straight away. It replaces a spreadsheet with a monthly tab
+  per month: the same summary block and the same six categories, but always
+  available and still exportable to Excel.
+- **Workouts** (`/workouts`): the A/B/C training plan from the old workout
+  spreadsheet. It says which day is next in the rotation, logs weight and reps
+  against each set's target with last time's numbers alongside, and says when
+  an exercise is ready for more weight. History lists every session; the plan
+  is editable.
 
-## What it does
+Adding another section means a folder under `src/app/`, a card on the Home
+page (`src/app/page.tsx`) and an entry in `SECTIONS` in
+`src/components/AppShell.tsx`.
+
+## Workouts
+
+- **Two set schemes.** RPT (reverse pyramid): 3 sets aiming 4-6, then 6-8,
+  then 8-10 reps. RP (rest-pause): a set of 10-15, then sets of 4-6.
+- **One rule for progressing.** Hit the top of the rep range on every set
+  before increasing the weight. Each exercise shows last time's sets and, once
+  every one reached the top of its range, says to go heavier. The same exercise
+  on different days (lateral raises are in all three) shares one history.
+- **Logging in the gym.** Weights start filled in from last time and reps
+  start empty; a set without reps is not logged. The workout in progress is kept
+  on the phone as it is typed, so a locked screen or reload loses nothing.
+- **The rotation.** A, B, C, then A again, from whichever day was trained last.
+  Any day can be picked instead. Days and exercises are edited on the Plan tab;
+  a logged session keeps its own copy of what was done, so editing the plan
+  never rewrites history.
+- The plan is seeded from the spreadsheet the first time Workouts is opened.
+  No AI is involved anywhere in Workouts.
+
+## Budget
+
+### What it does
 
 - **Two ways in.** Photograph a slip and have it read for you, or type the
   expense yourself — cash, a transfer, anything with no receipt worth keeping.
@@ -101,7 +131,8 @@ them, and locks every one of them down with row level security.
 `0002_storage.sql` creates the private `receipts` bucket and its policies.
 `0003_income.sql` adds money in, `0004_pay_cycle.sql` adds the per-month
 payday (`months.period_start`, null meaning the usual 24th), and
-`0005_deficit.sql` adds the deficit carried in from the month before.
+`0005_deficit.sql` adds the deficit carried in from the month before, and
+`0006_workouts.sql` adds the workout plan and logged sessions.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

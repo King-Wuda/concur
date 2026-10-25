@@ -41,8 +41,7 @@ function failure(error: unknown): { ok: false; error: string } {
 
 function revalidateMonth() {
   revalidatePath("/");
-  revalidatePath("/receipts");
-  revalidatePath("/plan");
+  revalidatePath("/budget", "layout");
 }
 
 /* -------------------------------------------------------------------------- */

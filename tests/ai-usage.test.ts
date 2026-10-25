@@ -91,11 +91,11 @@ test("the pages that only read data never reach for the model", () => {
   // Dashboard, receipts, plan, and the Excel export. If any of these ever want
   // the model, that is a decision to make on purpose, not by accident.
   for (const file of [
-    "src/app/page.tsx",
-    "src/app/receipts/page.tsx",
-    "src/app/plan/page.tsx",
+    "src/app/budget/page.tsx",
+    "src/app/budget/receipts/page.tsx",
+    "src/app/budget/plan/page.tsx",
     "src/app/api/export/route.ts",
-    "src/app/actions.ts",
+    "src/app/budget/actions.ts",
     "src/lib/aggregate.ts",
     "src/lib/excel.ts",
   ]) {

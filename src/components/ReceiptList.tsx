@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { deleteReceipt, signedReceiptUrl, updateReceipt } from "@/app/actions";
+import { deleteReceipt, signedReceiptUrl, updateReceipt } from "@/app/budget/actions";
 import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
 import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";

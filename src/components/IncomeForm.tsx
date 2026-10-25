@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveIncome } from "@/app/actions";
+import { saveIncome } from "@/app/budget/actions";
 import { formatRand, parseRand } from "@/lib/money";
 import { useMonthStarts } from "@/components/BudgetCalendar";
 import { formatMonthLong, isIsoDate, type MonthKey } from "@/lib/month";
@@ -74,7 +74,7 @@ export function IncomeForm({ monthKey }: { monthKey: MonthKey }) {
       return;
     }
 
-    router.push(`/?m=${monthKey}`);
+    router.push(`/budget?m=${monthKey}`);
     router.refresh();
   }
 

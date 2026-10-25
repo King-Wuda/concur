@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveFixedExpenses } from "@/app/actions";
+import { saveFixedExpenses } from "@/app/budget/actions";
 import { SaveBar } from "@/components/SaveBar";
 import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";

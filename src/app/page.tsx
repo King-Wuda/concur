@@ -1,281 +1,163 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { BudgetMeters } from "@/components/BudgetMeters";
-import { ExportMenu } from "@/components/ExportMenu";
-import { MonthSwitcher } from "@/components/MonthSwitcher";
-import { StatTile } from "@/components/StatTile";
-import { SpendPieChart } from "@/components/charts/SpendPieChart";
 import { analyseMonth } from "@/lib/aggregate";
 import { getMonthSnapshot, resolveMonth } from "@/lib/data";
-import { formatRand, formatRandSigned } from "@/lib/money";
+import { formatRand } from "@/lib/money";
 import { formatMonthLong } from "@/lib/month";
-import { formatPeriod } from "@/lib/period";
+import { formatPeriod, todayInSouthAfrica } from "@/lib/period";
 import { createClient } from "@/lib/supabase/server";
+import {
+  ensurePlan,
+  listSessions,
+  WorkoutsNotSetUpError,
+  type WorkoutDayRow,
+  type WorkoutSessionRow,
+} from "@/lib/workout-data";
+import { nextDayCode } from "@/lib/workouts";
 
-export const metadata = { title: "Dashboard - Budget" };
+export const metadata = { title: "Concur" };
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ m?: string }>;
-}) {
-  const { m } = await searchParams;
-
+/**
+ * The hub: one card per part of life being tracked, each showing the one thing
+ * worth knowing at a glance and the way in. New sections slot in as cards.
+ */
+export default async function HomePage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { monthKey, currentKey, months } = await resolveMonth(supabase, user.id, m);
-  const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
-  const knownMonths = months.map((row) => row.month);
-
-  const { categories, totals } = analyseMonth(snapshot);
-  const monthHref = (path: string) => `${path}?m=${monthKey}`;
+  const [budget, workouts] = await Promise.all([
+    budgetGlance(supabase, user.id),
+    workoutGlance(supabase, user.id),
+  ]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="sr-only">Dashboard for {formatMonthLong(monthKey)}</h1>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <MonthSwitcher monthKey={monthKey} currentKey={currentKey} knownMonths={knownMonths} />
-          {snapshot.period && (
+    <div className="space-y-5">
+      <h1 className="text-xl font-semibold tracking-tight">Today</h1>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <section className="card flex flex-col gap-4 p-4 sm:p-5">
+          <header className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold">Budget</h2>
             <span className="text-sm text-ink-muted tabular">
-              {formatPeriod(snapshot.period)}
+              {formatMonthLong(budget.monthKey)}
+              {budget.period && ` · ${formatPeriod(budget.period)}`}
             </span>
-          )}
-        </div>
-        <ExportMenu monthKey={monthKey} />
-      </div>
-
-      {/* The one number the month is about. */}
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="sm:col-span-1">
-          <StatTile
-            label={totals.remaining < 0 ? "Overspent" : "Left to save"}
-            value={Math.abs(totals.remaining)}
-            size="hero"
-            tone={totals.remaining < 0 ? "critical" : "good"}
-            detail={
-              totals.hasIncome
-                ? `${formatRandSigned(totals.savingsVsPlan)} against plan`
-                : "Add your salary on the Plan tab"
-            }
-          />
-        </div>
-        <StatTile
-          label="Money in"
-          value={totals.availableTotal}
-          detail={
-            totals.incomeTotal > 0
-              ? `${formatRand(totals.salaryAfterTax)} salary + ${formatRand(
-                  totals.incomeTotal,
-                )} from ${totals.incomeCount} other source${
-                  totals.incomeCount === 1 ? "" : "s"
-                }`
-              : totals.salary > 0
-                ? `${formatRand(totals.salary)} salary before tax`
-                : "Not set yet"
-          }
-        />
-        <StatTile
-          label="Total spend"
-          value={totals.totalSpend}
-          detail={`${formatRand(totals.receiptsTotal)} across ${totals.receiptCount} receipt${
-            totals.receiptCount === 1 ? "" : "s"
-          }`}
-        />
-      </section>
-
-      {totals.overspentCategories.length > 0 && (
-        <section
-          className="card flex flex-wrap items-center gap-x-3 gap-y-1 p-4"
-          style={{ borderColor: "var(--critical)" }}
-          role="status"
-        >
-          <span className="flex items-center gap-2 font-semibold" style={{ color: "var(--critical)" }}>
-            <WarningIcon />
-            Over budget
-          </span>
-          <span className="text-sm text-ink-secondary">
-            {totals.overspentCategories.join(", ")} — {formatRand(totals.totalOverspend)} over
-            in total.
-          </span>
-        </section>
-      )}
-
-      <section className="card p-4 sm:p-5">
-        <header className="mb-3">
-          <h2 className="font-semibold">Where the money went</h2>
-          <p className="text-sm text-ink-secondary">
-            Share of {formatRand(totals.positiveSpendTotal)} in categorised spend
-            {totals.positiveSpendTotal !== totals.categoryActualTotal &&
-              `, before ${formatRand(
-                totals.positiveSpendTotal - totals.categoryActualTotal,
-              )} came back`}
-            .
-          </p>
-        </header>
-        <SpendPieChart categories={categories} />
-      </section>
-
-      <section className="card p-4 sm:p-5">
-        <header className="mb-4 flex items-baseline justify-between gap-3">
-          <div>
-            <h2 className="font-semibold">Budget vs actual</h2>
-            <p className="text-sm text-ink-secondary">
-              {formatRand(totals.categoryActualTotal)} spent of{" "}
-              {formatRand(totals.budgetTotal)} budgeted.
-            </p>
-          </div>
-          <Link
-            href={monthHref("/plan")}
-            className="shrink-0 text-sm font-medium text-accent underline underline-offset-4"
-          >
-            Edit budgets
-          </Link>
-        </header>
-        <BudgetMeters categories={categories} />
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2">
-        <div className="card p-4 sm:p-5">
-          <h2 className="mb-3 font-semibold">Monthly summary</h2>
-          <dl className="space-y-2 text-sm">
-            <SummaryRow label="Salary" value={totals.salary} />
-            <SummaryRow label="Salary after tax" value={totals.salaryAfterTax} />
-            {totals.incomeTotal !== 0 && (
-              <SummaryRow
-                label="Other money in"
-                value={totals.incomeTotal}
-                detail={`${totals.incomeCount} entr${
-                  totals.incomeCount === 1 ? "y" : "ies"
-                }`}
-                tone="good"
-              />
-            )}
-            <SummaryRow
-              label="Tithe"
-              value={totals.tithe}
-              detail={
-                totals.salary > 0 && Math.abs(totals.tithe - totals.titheExpected) >= 1
-                  ? `10% would be ${formatRand(totals.titheExpected)}`
-                  : "10% of salary"
-              }
-            />
-            <SummaryRow label="Rent" value={totals.rent} />
-            <SummaryRow label="Investec" value={totals.investec} />
-            {totals.deficit > 0 && (
-              <SummaryRow
-                label="Deficit from last month"
-                value={totals.deficit}
-                detail="Last month's overspend, paid back"
-              />
-            )}
-            <SummaryRow label="Subscriptions & fixed" value={totals.fixedTotal} />
-            <div className="border-t border-line pt-2">
-              <SummaryRow label="Total spend" value={totals.totalSpend} strong />
-              <SummaryRow
-                label={totals.remaining < 0 ? "Shortfall" : "Left / saved"}
-                value={totals.remaining}
-                strong
-                tone={totals.remaining < 0 ? "critical" : "good"}
-              />
-            </div>
-          </dl>
-        </div>
-
-        <div className="card p-4 sm:p-5">
-          <header className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="font-semibold">Latest receipts</h2>
-            <Link
-              href={monthHref("/receipts")}
-              className="text-sm font-medium text-accent underline underline-offset-4"
-            >
-              See all
-            </Link>
           </header>
 
-          {snapshot.receipts.length === 0 ? (
-            <div className="space-y-3 py-2">
-              <p className="text-sm text-ink-secondary">
-                Nothing logged for {formatMonthLong(monthKey)} yet.
-              </p>
-              <Link href={monthHref("/capture")} className="btn btn-primary">
-                Scan a receipt
-              </Link>
-            </div>
+          <div>
+            <p className="text-sm text-ink-secondary">
+              {budget.remaining < 0 ? "Overspent" : "Left to save"}
+            </p>
+            <p
+              className="text-3xl font-semibold tabular"
+              style={{ color: budget.remaining < 0 ? "var(--critical)" : "var(--good-ink)" }}
+            >
+              {formatRand(Math.abs(budget.remaining))}
+            </p>
+            <p className="text-sm text-ink-muted">
+              {formatRand(budget.totalSpend)} spent across {budget.receiptCount} receipt
+              {budget.receiptCount === 1 ? "" : "s"}
+            </p>
+          </div>
+
+          <div className="mt-auto flex flex-wrap gap-2">
+            <Link href="/budget/add" className="btn btn-primary">
+              Add a receipt
+            </Link>
+            <Link href="/budget" className="btn">
+              Open Budget
+            </Link>
+          </div>
+        </section>
+
+        <section className="card flex flex-col gap-4 p-4 sm:p-5">
+          <header className="flex items-baseline justify-between gap-3">
+            <h2 className="font-semibold">Workouts</h2>
+            {workouts.ok && workouts.last && (
+              <span className="text-sm text-ink-muted">
+                Last: {workouts.last.day_name}, {daysAgo(workouts.last.date)}
+              </span>
+            )}
+          </header>
+
+          {workouts.ok ? (
+            <>
+              <div>
+                <p className="text-sm text-ink-secondary">Next up</p>
+                <p className="text-3xl font-semibold">{workouts.next?.name ?? "No plan yet"}</p>
+                {workouts.next?.focus && (
+                  <p className="text-sm text-ink-muted">{workouts.next.focus}</p>
+                )}
+              </div>
+              <div className="mt-auto flex flex-wrap gap-2">
+                {workouts.next && (
+                  <Link href={`/workouts?day=${workouts.next.code}`} className="btn btn-primary">
+                    Start {workouts.next.name}
+                  </Link>
+                )}
+                <Link href="/workouts/history" className="btn">
+                  History
+                </Link>
+              </div>
+            </>
           ) : (
-            <ul className="divide-y divide-[var(--border)] text-sm">
-              {snapshot.receipts.slice(0, 6).map((receipt) => (
-                <li key={receipt.id} className="flex items-baseline gap-3 py-2">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{receipt.store_name}</span>
-                    <span className="text-xs text-ink-muted">
-                      {receipt.date} · {receipt.category} ·{" "}
-                      {receipt.line_items.length} item
-                      {receipt.line_items.length === 1 ? "" : "s"}
-                    </span>
-                  </span>
-                  <span className="tabular font-medium">{formatRand(receipt.total)}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-sm text-ink-secondary">{workouts.message}</p>
           )}
-        </div>
-      </section>
+        </section>
+      </div>
     </div>
   );
 }
 
-function SummaryRow({
-  label,
-  value,
-  detail,
-  strong,
-  tone,
-}: {
-  label: string;
-  value: number;
-  detail?: string;
-  strong?: boolean;
-  tone?: "good" | "critical";
-}) {
-  const color =
-    tone === "good" ? "var(--good-ink)" : tone === "critical" ? "var(--critical)" : undefined;
+type DB = Awaited<ReturnType<typeof createClient>>;
 
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className={strong ? "font-semibold" : undefined}>
-        {label}
-        {detail && <span className="block text-xs text-ink-muted">{detail}</span>}
-      </dt>
-      <dd
-        className={`tabular ${strong ? "font-semibold" : ""}`}
-        style={color ? { color } : undefined}
-      >
-        {tone === "critical" ? formatRand(Math.abs(value)) : formatRand(value)}
-      </dd>
-    </div>
-  );
+async function budgetGlance(supabase: DB, userId: string) {
+  const { monthKey } = await resolveMonth(supabase, userId, null);
+  const snapshot = await getMonthSnapshot(supabase, userId, monthKey);
+  const { totals } = analyseMonth(snapshot);
+  return {
+    monthKey,
+    period: snapshot.period,
+    remaining: totals.remaining,
+    totalSpend: totals.totalSpend,
+    receiptCount: totals.receiptCount,
+  };
 }
 
-function WarningIcon() {
-  return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      aria-hidden
-    >
-      <path d="M12 4.5 2.8 20h18.4Z" />
-      <path d="M12 10.5v4M12 17.4v.2" />
-    </svg>
+async function workoutGlance(
+  supabase: DB,
+  userId: string,
+): Promise<
+  | { ok: true; next: WorkoutDayRow | null; last: WorkoutSessionRow | null }
+  | { ok: false; message: string }
+> {
+  try {
+    const [days, sessions] = await Promise.all([
+      ensurePlan(supabase, userId),
+      listSessions(supabase, userId, 1),
+    ]);
+    const last = sessions[0] ?? null;
+    const code = nextDayCode(
+      days.map((day) => day.code),
+      last?.day_code ?? null,
+    );
+    return { ok: true, next: days.find((day) => day.code === code) ?? null, last };
+  } catch (error) {
+    if (error instanceof WorkoutsNotSetUpError) return { ok: false, message: error.message };
+    throw error;
+  }
+}
+
+function daysAgo(date: string): string {
+  const today = todayInSouthAfrica();
+  const diff = Math.round(
+    (Date.parse(`${today}T00:00:00Z`) - Date.parse(`${date}T00:00:00Z`)) / 86_400_000,
   );
+  if (diff <= 0) return "today";
+  if (diff === 1) return "yesterday";
+  return `${diff} days ago`;
 }

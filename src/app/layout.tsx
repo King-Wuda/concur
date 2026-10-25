@@ -7,11 +7,11 @@ import { resolveMonth } from "@/lib/data";
 import { createClient, getUser } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
-  title: "Budget",
+  title: "Concur",
   description:
     "Personal monthly budgeting in rand: scan a receipt, categorise the spend, track it against the plan.",
-  applicationName: "Budget",
-  appleWebApp: { capable: true, title: "Budget", statusBarStyle: "default" },
+  applicationName: "Concur",
+  appleWebApp: { capable: true, title: "Concur", statusBarStyle: "default" },
 };
 
 export const viewport: Viewport = {

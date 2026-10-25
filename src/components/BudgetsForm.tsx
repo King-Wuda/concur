@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { saveBudgets } from "@/app/actions";
+import { saveBudgets } from "@/app/budget/actions";
 import { MoneyField } from "@/components/MoneyField";
 import { SaveBar } from "@/components/SaveBar";
 import type { CategoryTotal } from "@/lib/aggregate";

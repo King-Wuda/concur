@@ -91,3 +91,14 @@ begin
   end if;
   raise notice 'PASS  the new income table arrived empty';
 end $$;
+
+-- The workout tables arrive empty too: the plan is seeded by the app, for the
+-- signed-in user, the first time Workouts is opened.
+do $$
+begin
+  if (select count(*) from public.workout_days) <> 0
+     or (select count(*) from public.workout_sessions) <> 0 then
+    raise exception 'the workout tables were not empty after the migration';
+  end if;
+  raise notice 'PASS  the new workout tables arrived empty';
+end $$;

@@ -7,9 +7,9 @@ import type { MetadataRoute } from "next";
  */
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Budget",
-    short_name: "Budget",
-    description: "Personal monthly budgeting in rand.",
+    name: "Concur",
+    short_name: "Concur",
+    description: "Budget, workouts and the rest of life, planned and tracked.",
     start_url: "/",
     scope: "/",
     display: "standalone",

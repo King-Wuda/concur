@@ -50,7 +50,7 @@ export default async function ReceiptsPage({
             {snapshot.income.length > 0 && ` · ${formatRand(incomeTotal)} in`}
           </p>
         </div>
-        <Link href={`/capture?m=${monthKey}`} className="btn btn-primary">
+        <Link href={`/budget/add?m=${monthKey}`} className="btn btn-primary">
           Add to the month
         </Link>
       </header>
