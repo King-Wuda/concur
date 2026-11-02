@@ -54,6 +54,7 @@ const SECTIONS: { id: string; label: string; href: string; tabs: Tab[] }[] = [
       { href: "/goals", label: "Today", icon: CheckIcon },
       { href: "/goals/list", label: "Goals", icon: FlagIcon },
       { href: "/goals/routine", label: "Routine", icon: RepeatIcon },
+      { href: "/goals/quotes", label: "Quotes", icon: QuoteIcon },
     ],
   },
 ];
@@ -343,6 +344,14 @@ function FlagIcon() {
   return (
     <svg {...iconProps}>
       <path d="M6 21V4M6 4h10.5l-2 4 2 4H6" />
+    </svg>
+  );
+}
+
+function QuoteIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M5 18c2.5-1 4-3.2 4-6V7H4.5v5H9M15 18c2.5-1 4-3.2 4-6V7h-4.5v5H19" />
     </svg>
   );
 }

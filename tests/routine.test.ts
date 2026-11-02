@@ -140,3 +140,30 @@ test("week on week change compares the two 7-day averages", () => {
   assert.equal(weeklyChange(logs, WED), -1.3);
   assert.equal(weeklyChange([], WED), null);
 });
+
+test("one quote a day: the same all day, never yesterday's, and all get a turn", async () => {
+  const { dailyIndex, quoteForDay } = await import("@/lib/quotes");
+  assert.equal(dailyIndex(0, WED), null);
+  assert.equal(dailyIndex(1, WED), 0);
+  assert.equal(quoteForDay([], WED), null);
+
+  // Stable within a day.
+  assert.equal(dailyIndex(5, WED), dailyIndex(5, WED));
+
+  // Over a year: no day repeats the one before, and every quote shows up.
+  for (const count of [2, 3, 5, 12]) {
+    const seen = new Set<number>();
+    let previous: number | null = null;
+    let day = "2026-11-01";
+    for (let i = 0; i < 365; i += 1) {
+      const index = dailyIndex(count, day)!;
+      assert.ok(index >= 0 && index < count);
+      assert.notEqual(index, previous, `${day} repeated yesterday's quote (${count} quotes)`);
+      seen.add(index);
+      previous = index;
+      const [y, m, d] = day.split("-").map(Number);
+      day = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+    }
+    assert.equal(seen.size, count);
+  }
+});

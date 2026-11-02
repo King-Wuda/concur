@@ -22,7 +22,10 @@ import {
   listChecks,
   listGoals,
   listHabits,
+  listQuotes,
 } from "@/lib/goals-data";
+import { DailyQuote } from "@/components/goals/DailyQuote";
+import { quoteForDay } from "@/lib/quotes";
 import {
   deadlineStatus,
   describeDeadline,
@@ -54,6 +57,10 @@ export default async function HomePage() {
   return (
     <div className="space-y-5">
       <h1 className="text-xl font-semibold tracking-tight">Today</h1>
+
+      {goals.ok && (
+        <DailyQuote quotes={goals.quotes} todays={goals.todaysQuote} />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-2">
         <section className="card flex flex-col gap-4 p-4 sm:p-5">
@@ -276,10 +283,11 @@ async function workoutGlance(
 
 async function goalsGlance(supabase: DB, userId: string, today: string) {
   try {
-    const [habits, checks, goals] = await Promise.all([
+    const [habits, checks, goals, quotes] = await Promise.all([
       listHabits(supabase, userId),
       listChecks(supabase, userId, today),
       listGoals(supabase, userId),
+      listQuotes(supabase, userId),
     ]);
     const due = habits
       .filter((habit) => isDue(habit, today))
@@ -291,6 +299,8 @@ async function goalsGlance(supabase: DB, userId: string, today: string) {
     const progress = first ? milestoneProgress(first.milestones) : null;
     return {
       ok: true as const,
+      quotes,
+      todaysQuote: quoteForDay(quotes, today),
       hasHabits: habits.length > 0,
       due,
       dueCount: due.length,

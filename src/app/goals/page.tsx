@@ -3,9 +3,16 @@ import { redirect } from "next/navigation";
 
 import { GoalsSetupNeeded } from "@/components/goals/GoalsSetupNeeded";
 import { TodayChecklist } from "@/components/goals/TodayChecklist";
-import { GoalsNotSetUpError, listChecks, listHabits } from "@/lib/goals-data";
+import { DailyQuote } from "@/components/goals/DailyQuote";
+import {
+  GoalsNotSetUpError,
+  listChecks,
+  listHabits,
+  listQuotes,
+} from "@/lib/goals-data";
 import { isIsoDate } from "@/lib/month";
 import { todayInSouthAfrica } from "@/lib/period";
+import { quoteForDay } from "@/lib/quotes";
 import { addDays, describeSchedule, formatDay, isDue } from "@/lib/routine";
 import { createClient } from "@/lib/supabase/server";
 
@@ -31,19 +38,21 @@ export default async function TodayPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  let habits, checks;
+  let habits, checks, quotes;
   try {
-    [habits, checks] = await Promise.all([
+    [habits, checks, quotes] = await Promise.all([
       listHabits(supabase, user.id),
       listChecks(supabase, user.id, earliest),
+      listQuotes(supabase, user.id),
     ]);
   } catch (error) {
     if (error instanceof GoalsNotSetUpError) return <GoalsSetupNeeded />;
     throw error;
   }
 
-  const due = habits.filter((habit) => isDue(habit, date) && habit.created_at <= date);
-  const notToday = habits.filter((habit) => !due.includes(habit));
+  const due = habits.filter(
+    (habit) => isDue(habit, date) && habit.created_at <= date,
+  );
 
   return (
     <div className="space-y-5">
@@ -58,12 +67,20 @@ export default async function TodayPage({
         </Link>
         <div className="min-w-0 flex-1 text-center">
           <h1 className="text-lg font-semibold tracking-tight">
-            {date === today ? "Today" : date === addDays(today, -1) ? "Yesterday" : formatDay(date)}
+            {date === today
+              ? "Today"
+              : date === addDays(today, -1)
+                ? "Yesterday"
+                : formatDay(date)}
           </h1>
           <p className="text-sm text-ink-muted">{formatDay(date)}</p>
         </div>
         <Link
-          href={date === addDays(today, -1) ? "/goals" : `/goals?d=${addDays(date, 1)}`}
+          href={
+            date === addDays(today, -1)
+              ? "/goals"
+              : `/goals?d=${addDays(date, 1)}`
+          }
           aria-disabled={date >= today}
           className={`btn size-11 !p-0 ${date >= today ? "pointer-events-none opacity-40" : ""}`}
           aria-label="Next day"
@@ -72,11 +89,14 @@ export default async function TodayPage({
         </Link>
       </header>
 
+      <DailyQuote quotes={quotes} todays={quoteForDay(quotes, date)} />
+
       {habits.length === 0 ? (
         <section className="card space-y-3 p-4 sm:p-5">
           <p className="text-sm text-ink-secondary">
-            Your routine is empty. Add the things you do on a schedule - skincare on Wednesdays
-            and Sundays, Bible study every day - and each day&apos;s list shows up here.
+            Your routine is empty. Add the things you do on a schedule -
+            skincare on Wednesdays and Sundays, Bible study every day - and each
+            day&apos;s list shows up here.
           </p>
           <Link href="/goals/routine" className="btn btn-primary">
             Set up your routine
@@ -93,22 +113,6 @@ export default async function TodayPage({
             done: checks.get(habit.id)?.has(date) ?? false,
           }))}
         />
-      )}
-
-      {notToday.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-medium text-ink-secondary">
-            Not on {date === today ? "today's" : "this day's"} list
-          </h2>
-          <ul className="card divide-y divide-[var(--border)] text-sm">
-            {notToday.map((habit) => (
-              <li key={habit.id} className="flex justify-between gap-3 px-4 py-2.5">
-                <span>{habit.name}</span>
-                <span className="text-ink-muted">{describeSchedule(habit.weekdays)}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
       )}
     </div>
   );

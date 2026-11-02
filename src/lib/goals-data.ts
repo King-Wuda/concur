@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { BodyLog } from "@/lib/body";
+import type { Quote } from "@/lib/quotes";
 
 /**
  * Database access for goals, the routine and the body log. As elsewhere, every
@@ -130,6 +131,18 @@ export async function listBodyLogs(
     weight_kg: row.weight_kg === null ? null : Number(row.weight_kg),
     steps: row.steps === null ? null : Number(row.steps),
   }));
+}
+
+/** Your quotes and affirmations, oldest first - the order the daily pick uses. */
+export async function listQuotes(supabase: DB, userId: string): Promise<Quote[]> {
+  const { data, error } = await supabase
+    .from("quotes")
+    .select("id, kind, text, author")
+    .eq("user_id", userId)
+    .order("created_at")
+    .order("id");
+  check(error);
+  return (data ?? []) as Quote[];
 }
 
 /** A timestamp's date in Johannesburg (UTC+2, no daylight saving). */

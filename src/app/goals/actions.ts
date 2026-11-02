@@ -380,3 +380,68 @@ export async function setHabitDone(
     return failure(error);
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* Quotes and affirmations                                                    */
+/* -------------------------------------------------------------------------- */
+
+const QuoteInput = z.object({
+  kind: z.enum(["quote", "affirmation"]),
+  text: z.string().trim().min(1, "Write the quote or affirmation.").max(1000),
+  author: z.string().trim().max(120).nullable().optional(),
+});
+
+export type QuoteInput = z.input<typeof QuoteInput>;
+
+export async function createQuote(raw: QuoteInput): Promise<ActionResult> {
+  try {
+    const input = QuoteInput.parse(raw);
+    const { supabase, userId } = await session();
+    const { error } = await supabase.from("quotes").insert({
+      user_id: userId,
+      kind: input.kind,
+      text: input.text,
+      author: input.kind === "quote" ? input.author || null : null,
+    });
+    if (error) throw error;
+    revalidateGoals();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function updateQuote(raw: QuoteInput & { id: string }): Promise<ActionResult> {
+  try {
+    const id = Id.parse(raw.id);
+    const input = QuoteInput.parse(raw);
+    const { supabase, userId } = await session();
+    const { error } = await supabase
+      .from("quotes")
+      .update({
+        kind: input.kind,
+        text: input.text,
+        author: input.kind === "quote" ? input.author || null : null,
+      })
+      .eq("id", id)
+      .eq("user_id", userId);
+    if (error) throw error;
+    revalidateGoals();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteQuote(id: string): Promise<ActionResult> {
+  try {
+    Id.parse(id);
+    const { supabase, userId } = await session();
+    const { error } = await supabase.from("quotes").delete().eq("id", id).eq("user_id", userId);
+    if (error) throw error;
+    revalidateGoals();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}

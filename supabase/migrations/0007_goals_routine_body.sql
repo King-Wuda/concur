@@ -10,13 +10,16 @@
 -- habit_checks; unticking deletes it. A habit can optionally point at the goal
 -- it serves.
 --
+-- quotes holds your own quotes and affirmations; the app shows one a day,
+-- picked at random.
+--
 -- body_logs holds one row per day: the morning weight and the day's steps,
 -- either of which can be left empty.
 --
 -- Same protections as every other table: scoped to the owner, row level
 -- security on, and only the authenticated role granted access.
 --
--- Adds five new tables and touches nothing that exists. Safe to run more than
+-- Adds six new tables and touches nothing that exists. Safe to run more than
 -- once.
 -- ============================================================================
 
@@ -80,17 +83,29 @@ create table if not exists public.body_logs (
   unique (user_id, date)
 );
 
+create table if not exists public.quotes (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references auth.users (id) on delete cascade,
+  kind        text not null default 'quote' check (kind in ('quote', 'affirmation')),
+  text        text not null check (length(trim(text)) > 0),
+  -- Who said it, for a quote. Affirmations are your own.
+  author      text,
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now()
+);
+
 create index if not exists goals_user_position_idx on public.goals (user_id, position);
 create index if not exists goal_milestones_goal_idx on public.goal_milestones (goal_id, position);
 create index if not exists habits_user_position_idx on public.habits (user_id, position);
 create index if not exists habit_checks_user_date_idx on public.habit_checks (user_id, date desc);
 create index if not exists body_logs_user_date_idx on public.body_logs (user_id, date desc);
+create index if not exists quotes_user_idx on public.quotes (user_id, created_at);
 
 do $$
 declare
   t text;
 begin
-  foreach t in array array['goals', 'goal_milestones', 'habits', 'body_logs']
+  foreach t in array array['goals', 'goal_milestones', 'habits', 'body_logs', 'quotes']
   loop
     execute format('drop trigger if exists %1$s_touch_updated_at on public.%1$s', t);
     execute format(
@@ -98,7 +113,7 @@ begin
          for each row execute function public.touch_updated_at()', t);
   end loop;
 
-  foreach t in array array['goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs']
+  foreach t in array array['goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes']
   loop
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
     execute format('alter table public.%I enable row level security', t);

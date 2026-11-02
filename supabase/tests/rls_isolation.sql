@@ -128,6 +128,9 @@ values (
 insert into public.body_logs (user_id, date, weight_kg, steps)
 values ('11111111-1111-1111-1111-111111111111', '2026-11-01', 82.4, 9500);
 
+insert into public.quotes (user_id, kind, text)
+values ('11111111-1111-1111-1111-111111111111', 'affirmation', 'I keep my promises to myself.');
+
 -- --------------------------------------------------------------------------
 -- The owner sees their own rows.
 -- --------------------------------------------------------------------------
@@ -164,7 +167,8 @@ begin
      or (select count(*) from public.goal_milestones) <> 1
      or (select count(*) from public.habits) <> 1
      or (select count(*) from public.habit_checks) <> 1
-     or (select count(*) from public.body_logs) <> 1 then
+     or (select count(*) from public.body_logs) <> 1
+     or (select count(*) from public.quotes) <> 1 then
     raise exception 'owner cannot see their own goals, routine or body log';
   end if;
   raise notice 'PASS  owner sees their own rows';
@@ -183,7 +187,7 @@ begin
   foreach t in array array[
     'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
     'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets',
-    'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs'
+    'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes'
   ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
