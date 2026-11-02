@@ -96,6 +96,38 @@ values (
   'Incline bench', 'RPT', 1, '4-6', 60, 6
 );
 
+insert into public.goals (id, user_id, title, deadline)
+values (
+  '77777777-7777-7777-7777-777777777777',
+  '11111111-1111-1111-1111-111111111111',
+  'Run a half marathon', '2027-06-01'
+);
+
+insert into public.goal_milestones (user_id, goal_id, title)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  '77777777-7777-7777-7777-777777777777',
+  'Run 10 km'
+);
+
+insert into public.habits (id, user_id, name, weekdays, goal_id)
+values (
+  '88888888-8888-8888-8888-888888888888',
+  '11111111-1111-1111-1111-111111111111',
+  'Skincare', array[0, 3]::smallint[],
+  '77777777-7777-7777-7777-777777777777'
+);
+
+insert into public.habit_checks (user_id, habit_id, date)
+values (
+  '11111111-1111-1111-1111-111111111111',
+  '88888888-8888-8888-8888-888888888888',
+  '2026-11-01'
+);
+
+insert into public.body_logs (user_id, date, weight_kg, steps)
+values ('11111111-1111-1111-1111-111111111111', '2026-11-01', 82.4, 9500);
+
 -- --------------------------------------------------------------------------
 -- The owner sees their own rows.
 -- --------------------------------------------------------------------------
@@ -128,6 +160,13 @@ begin
      or (select count(*) from public.workout_sets) <> 1 then
     raise exception 'owner cannot see their own workouts';
   end if;
+  if (select count(*) from public.goals) <> 1
+     or (select count(*) from public.goal_milestones) <> 1
+     or (select count(*) from public.habits) <> 1
+     or (select count(*) from public.habit_checks) <> 1
+     or (select count(*) from public.body_logs) <> 1 then
+    raise exception 'owner cannot see their own goals, routine or body log';
+  end if;
   raise notice 'PASS  owner sees their own rows';
 end $$;
 
@@ -143,7 +182,8 @@ declare
 begin
   foreach t in array array[
     'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
-    'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets'
+    'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets',
+    'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs'
   ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
@@ -198,6 +238,24 @@ begin
     raise exception 'another user deleted % workout session row(s)', affected;
   end if;
 
+  update public.goals set title = 'Hijacked';
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user updated % goal row(s)', affected;
+  end if;
+
+  delete from public.habit_checks;
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user deleted % habit tick(s)', affected;
+  end if;
+
+  update public.body_logs set weight_kg = 1;
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user updated % body log row(s)', affected;
+  end if;
+
   raise notice 'PASS  another user cannot update or delete';
 end $$;
 
@@ -229,6 +287,19 @@ begin
     when insufficient_privilege then
       raise notice 'PASS  another user cannot plant a workout under someone else''s id';
   end;
+
+  begin
+    insert into public.habit_checks (user_id, habit_id, date)
+    values (
+      '11111111-1111-1111-1111-111111111111',
+      '88888888-8888-8888-8888-888888888888',
+      '2026-11-02'
+    );
+    raise exception 'another user ticked a habit under the owner''s id';
+  exception
+    when insufficient_privilege then
+      raise notice 'PASS  another user cannot tick someone else''s habit';
+  end;
 end $$;
 
 -- --------------------------------------------------------------------------
@@ -258,6 +329,42 @@ begin
   end if;
 
   raise notice 'PASS  owner can still read and write their own data';
+end $$;
+
+-- --------------------------------------------------------------------------
+-- A habit needs real weekdays, and a day can only be ticked once.
+-- --------------------------------------------------------------------------
+do $$
+begin
+  begin
+    insert into public.habits (user_id, name, weekdays)
+    values ('11111111-1111-1111-1111-111111111111', 'Never', array[]::smallint[]);
+    raise exception 'a habit with no weekdays was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.habits (user_id, name, weekdays)
+    values ('11111111-1111-1111-1111-111111111111', 'Day eight', array[7]::smallint[]);
+    raise exception 'a weekday outside 0-6 was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.habit_checks (user_id, habit_id, date)
+    values (
+      '11111111-1111-1111-1111-111111111111',
+      '88888888-8888-8888-8888-888888888888',
+      '2026-11-01'
+    );
+    raise exception 'the same habit was ticked twice on one day';
+  exception
+    when unique_violation then null;
+  end;
+
+  raise notice 'PASS  habit schedules and ticks are validated';
 end $$;
 
 -- --------------------------------------------------------------------------

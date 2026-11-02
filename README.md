@@ -14,6 +14,11 @@ on, one section each, with a Home hub that shows where each one stands today.
   an exercise is ready for more weight. History lists every session; the plan
   is editable.
 
+- **Goals** (`/goals`): life goals in priority order, each with a deadline or
+  open-ended and a checklist of milestones, plus the routine: habits done on
+  chosen weekdays, ticked off on each day's Today list, with streaks and
+  eight-week consistency. A habit can be linked to the goal it serves.
+
 Adding another section means a folder under `src/app/`, a card on the Home
 page (`src/app/page.tsx`) and an entry in `SECTIONS` in
 `src/components/AppShell.tsx`.
@@ -33,6 +38,9 @@ page (`src/app/page.tsx`) and an entry in `SECTIONS` in
   Any day can be picked instead. Days and exercises are edited on the Plan tab;
   a logged session keeps its own copy of what was done, so editing the plan
   never rewrites history.
+- **Body.** Morning weight and the day's steps, saved separately so steps
+  logged at night never touch the morning's weight. Charts show daily weight
+  with its 7-day average, and steps per day.
 - The plan is seeded from the spreadsheet the first time Workouts is opened.
   No AI is involved anywhere in Workouts.
 
@@ -132,7 +140,9 @@ them, and locks every one of them down with row level security.
 `0003_income.sql` adds money in, `0004_pay_cycle.sql` adds the per-month
 payday (`months.period_start`, null meaning the usual 24th), and
 `0005_deficit.sql` adds the deficit carried in from the month before, and
-`0006_workouts.sql` adds the workout plan and logged sessions.
+`0006_workouts.sql` adds the workout plan and logged sessions, and
+`0007_goals_routine_body.sql` adds goals, milestones, the routine and the body
+log.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

@@ -5,6 +5,7 @@ import * as z from "zod";
 
 import { isIsoDate } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
+import { todayInSouthAfrica } from "@/lib/period";
 import { SCHEMES } from "@/lib/workouts";
 
 /**
@@ -271,4 +272,66 @@ export async function deleteDay(id: string): Promise<ActionResult> {
   } catch (error) {
     return failure(error);
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Body log                                                                   */
+/* -------------------------------------------------------------------------- */
+
+const BodyInput = z.object({
+  date: DateSchema,
+  /** Left out to keep what is there; null to clear it. */
+  weight_kg: z.number().finite().gt(0).lt(500).nullable().optional(),
+  steps: z.number().int().min(0).max(200_000).nullable().optional(),
+});
+
+export type BodyInput = z.input<typeof BodyInput>;
+
+/**
+ * Saves the morning weight and/or the day's steps. The two are saved
+ * separately - weight in the morning, steps at night - so each only touches
+ * its own field.
+ */
+export async function saveBodyLog(raw: BodyInput): Promise<ActionResult> {
+  try {
+    const input = BodyInput.parse(raw);
+    if (input.date > todayInSouthAfrica()) {
+      return { ok: false, error: "That day has not happened yet." };
+    }
+    const { supabase, userId } = await session();
+
+    const patch: Record<string, unknown> = {};
+    if (input.weight_kg !== undefined) patch.weight_kg = input.weight_kg;
+    if (input.steps !== undefined) patch.steps = input.steps;
+    if (Object.keys(patch).length === 0) return { ok: true };
+
+    const existing = await supabase
+      .from("body_logs")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("date", input.date)
+      .maybeSingle();
+    if (isMissing(existing.error)) {
+      return {
+        ok: false,
+        error:
+          "Run supabase/migrations/0007_goals_routine_body.sql in the Supabase SQL editor first.",
+      };
+    }
+    if (existing.error) throw existing.error;
+
+    const { error } = existing.data
+      ? await supabase.from("body_logs").update(patch).eq("id", existing.data.id)
+      : await supabase.from("body_logs").insert({ user_id: userId, date: input.date, ...patch });
+    if (error) throw error;
+
+    revalidateWorkouts();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+function isMissing(error: { code?: string } | null): boolean {
+  return error?.code === "42P01" || error?.code === "PGRST205";
 }

@@ -42,7 +42,18 @@ const SECTIONS: { id: string; label: string; href: string; tabs: Tab[] }[] = [
     tabs: [
       { href: "/workouts", label: "Train", icon: DumbbellIcon },
       { href: "/workouts/history", label: "History", icon: ListIcon },
+      { href: "/workouts/body", label: "Body", icon: ScaleIcon },
       { href: "/workouts/plan", label: "Plan", icon: SlidersIcon },
+    ],
+  },
+  {
+    id: "goals",
+    label: "Goals",
+    href: "/goals",
+    tabs: [
+      { href: "/goals", label: "Today", icon: CheckIcon },
+      { href: "/goals/list", label: "Goals", icon: FlagIcon },
+      { href: "/goals/routine", label: "Routine", icon: RepeatIcon },
     ],
   },
 ];
@@ -50,6 +61,7 @@ const SECTIONS: { id: string; label: string; href: string; tabs: Tab[] }[] = [
 const SECTION_ICONS: Record<string, () => React.JSX.Element> = {
   budget: ChartIcon,
   workouts: DumbbellIcon,
+  goals: FlagIcon,
 };
 
 export function AppShell({
@@ -305,6 +317,40 @@ function DumbbellIcon() {
   return (
     <svg {...iconProps}>
       <path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" />
+    </svg>
+  );
+}
+
+function ScaleIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="M9 9.5a4 4 0 0 1 6 0M12 9.5l1.2-1.6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="4" y="4" width="16" height="16" rx="3" />
+      <path d="m8.5 12 2.5 2.5 4.5-5" />
+    </svg>
+  );
+}
+
+function FlagIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M6 21V4M6 4h10.5l-2 4 2 4H6" />
+    </svg>
+  );
+}
+
+function RepeatIcon() {
+  return (
+    <svg {...iconProps}>
+      <path d="M5 11V9a3 3 0 0 1 3-3h10M15 3l3 3-3 3M19 13v2a3 3 0 0 1-3 3H6M9 21l-3-3 3-3" />
     </svg>
   );
 }

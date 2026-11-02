@@ -102,3 +102,13 @@ begin
   end if;
   raise notice 'PASS  the new workout tables arrived empty';
 end $$;
+
+do $$
+begin
+  if (select count(*) from public.goals) <> 0
+     or (select count(*) from public.habits) <> 0
+     or (select count(*) from public.body_logs) <> 0 then
+    raise exception 'the goals, routine or body tables were not empty after the migration';
+  end if;
+  raise notice 'PASS  the new goals, routine and body tables arrived empty';
+end $$;
