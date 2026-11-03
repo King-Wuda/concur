@@ -18,6 +18,12 @@ export type ActionResult<T = undefined> =
   | { ok: false; error: string };
 
 const DateSchema = z.string().refine(isIsoDate, "Expected a real date like 2026-11-04");
+const TimeSchema = z
+  .string()
+  .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected a time like 05:30")
+  .nullable()
+  .optional();
+const CategorySchema = z.string().trim().max(40).nullable().optional();
 const Id = z.string().uuid();
 
 async function session() {
@@ -32,6 +38,12 @@ async function session() {
 function failure(error: unknown): { ok: false; error: string } {
   if (typeof error === "object" && error && "code" in error) {
     const code = (error as { code?: string }).code;
+    if (code === "42703" || code === "PGRST204") {
+      return {
+        ok: false,
+        error: "Run supabase/migrations/0008_routine_times.sql in the Supabase SQL editor first.",
+      };
+    }
     if (code === "42P01" || code === "PGRST205") {
       return {
         ok: false,
@@ -62,6 +74,8 @@ const GoalInput = z.object({
   title: z.string().trim().min(1, "Give the goal a name.").max(200),
   notes: z.string().trim().max(2000).nullable().optional(),
   deadline: DateSchema.nullable(),
+  startDate: DateSchema.nullable().optional(),
+  category: CategorySchema,
   milestones: z.array(z.string().trim().min(1).max(200)).max(50).optional(),
 });
 
@@ -89,6 +103,7 @@ export async function createGoal(raw: GoalInput): Promise<ActionResult<{ id: str
         title: input.title,
         notes: input.notes || null,
         deadline: input.deadline,
+        ...optionalGoalFields(input),
         position: (last.data?.position ?? -1) + 1,
       })
       .select("id")
@@ -120,6 +135,8 @@ const GoalUpdate = z.object({
   title: z.string().trim().min(1).max(200),
   notes: z.string().trim().max(2000).nullable().optional(),
   deadline: DateSchema.nullable(),
+  startDate: DateSchema.nullable().optional(),
+  category: CategorySchema,
 });
 
 export async function updateGoal(raw: z.input<typeof GoalUpdate>): Promise<ActionResult> {
@@ -128,7 +145,12 @@ export async function updateGoal(raw: z.input<typeof GoalUpdate>): Promise<Actio
     const { supabase, userId } = await session();
     const { error } = await supabase
       .from("goals")
-      .update({ title: input.title, notes: input.notes || null, deadline: input.deadline })
+      .update({
+        title: input.title,
+        notes: input.notes || null,
+        deadline: input.deadline,
+        ...optionalGoalFields(input),
+      })
       .eq("id", input.id)
       .eq("user_id", userId);
     if (error) throw error;
@@ -137,6 +159,17 @@ export async function updateGoal(raw: z.input<typeof GoalUpdate>): Promise<Actio
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Category and start date are only written when given, so a goal can still
+ * be added on a database that has not had migration 0008 yet.
+ */
+function optionalGoalFields(input: { startDate?: string | null; category?: string | null }) {
+  const fields: Record<string, unknown> = {};
+  if (input.category !== undefined) fields.category = input.category || null;
+  if (input.startDate !== undefined) fields.start_date = input.startDate;
+  return fields;
 }
 
 /** Marks a goal achieved (or back to in progress). */
@@ -273,6 +306,10 @@ const HabitInput = z.object({
     .max(7)
     .transform((days) => [...new Set(days)].sort()),
   goalId: Id.nullable(),
+  startTime: TimeSchema,
+  endTime: TimeSchema,
+  category: CategorySchema,
+  notes: z.string().trim().max(300).nullable().optional(),
 });
 
 export type HabitInput = z.input<typeof HabitInput>;
@@ -296,6 +333,7 @@ export async function createHabit(raw: HabitInput): Promise<ActionResult> {
       name: input.name,
       weekdays: input.weekdays,
       goal_id: input.goalId,
+      ...optionalHabitFields(input),
       position: (last.data?.position ?? -1) + 1,
     });
     if (error) throw error;
@@ -315,7 +353,12 @@ export async function updateHabit(
     const { supabase, userId } = await session();
     const { error } = await supabase
       .from("habits")
-      .update({ name: input.name, weekdays: input.weekdays, goal_id: input.goalId })
+      .update({
+        name: input.name,
+        weekdays: input.weekdays,
+        goal_id: input.goalId,
+        ...optionalHabitFields(input),
+      })
       .eq("id", id)
       .eq("user_id", userId);
     if (error) throw error;
@@ -324,6 +367,22 @@ export async function updateHabit(
   } catch (error) {
     return failure(error);
   }
+}
+
+/** As for goals: the new fields are only written when given. */
+function optionalHabitFields(input: z.output<typeof HabitInput>) {
+  if (input.endTime && !input.startTime) {
+    throw new Error("Set a start time before an end time.");
+  }
+  if (input.startTime && input.endTime && input.endTime <= input.startTime) {
+    throw new Error("The end time has to be after the start time.");
+  }
+  const fields: Record<string, unknown> = {};
+  if (input.startTime !== undefined) fields.start_time = input.startTime || null;
+  if (input.endTime !== undefined) fields.end_time = input.endTime || null;
+  if (input.category !== undefined) fields.category = input.category || null;
+  if (input.notes !== undefined) fields.notes = input.notes || null;
+  return fields;
 }
 
 export async function deleteHabit(id: string): Promise<ActionResult> {

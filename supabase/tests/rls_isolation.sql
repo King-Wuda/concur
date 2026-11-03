@@ -128,6 +128,9 @@ values (
 insert into public.body_logs (user_id, date, weight_kg, steps)
 values ('11111111-1111-1111-1111-111111111111', '2026-11-01', 82.4, 9500);
 
+insert into public.user_settings (user_id, step_goal)
+values ('11111111-1111-1111-1111-111111111111', 10000);
+
 insert into public.quotes (user_id, kind, text)
 values ('11111111-1111-1111-1111-111111111111', 'affirmation', 'I keep my promises to myself.');
 
@@ -168,7 +171,8 @@ begin
      or (select count(*) from public.habits) <> 1
      or (select count(*) from public.habit_checks) <> 1
      or (select count(*) from public.body_logs) <> 1
-     or (select count(*) from public.quotes) <> 1 then
+     or (select count(*) from public.quotes) <> 1
+     or (select count(*) from public.user_settings) <> 1 then
     raise exception 'owner cannot see their own goals, routine or body log';
   end if;
   raise notice 'PASS  owner sees their own rows';
@@ -187,7 +191,8 @@ begin
   foreach t in array array[
     'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
     'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets',
-    'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes'
+    'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes',
+    'user_settings'
   ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
@@ -258,6 +263,12 @@ begin
   get diagnostics affected = row_count;
   if affected <> 0 then
     raise exception 'another user updated % body log row(s)', affected;
+  end if;
+
+  update public.user_settings set step_goal = 1;
+  get diagnostics affected = row_count;
+  if affected <> 0 then
+    raise exception 'another user changed % step goal(s)', affected;
   end if;
 
   raise notice 'PASS  another user cannot update or delete';
@@ -366,6 +377,14 @@ begin
     raise exception 'the same habit was ticked twice on one day';
   exception
     when unique_violation then null;
+  end;
+
+  begin
+    update public.habits set start_time = '21:00', end_time = '20:30'
+    where id = '88888888-8888-8888-8888-888888888888';
+    raise exception 'a habit ending before it starts was accepted';
+  exception
+    when check_violation then null;
   end;
 
   raise notice 'PASS  habit schedules and ticks are validated';

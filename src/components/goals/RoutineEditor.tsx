@@ -6,6 +6,9 @@ import { useState } from "react";
 import { createHabit, deleteHabit, updateHabit } from "@/app/goals/actions";
 import {
   describeSchedule,
+  formatTimeRange,
+  shortTime,
+  SUGGESTED_CATEGORIES,
   WEEK_ORDER,
   WEEKDAY_NAMES,
   type Consistency,
@@ -17,6 +20,10 @@ type Habit = {
   weekdays: number[];
   goalId: string | null;
   goalTitle: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  category: string | null;
+  notes: string | null;
   consistency: Consistency;
   recent: { date: string; state: "done" | "missed" | "today" }[];
 };
@@ -54,11 +61,22 @@ export function RoutineEditor({ habits, goals }: { habits: Habit[]; goals: GoalO
                   <div className="min-w-0 flex-1">
                     <h2 className="font-semibold">{habit.name}</h2>
                     <p className="text-sm text-ink-secondary">
+                      {formatTimeRange(habit.startTime, habit.endTime) && (
+                        <span className="font-medium tabular text-ink">
+                          {formatTimeRange(habit.startTime, habit.endTime)} ·{" "}
+                        </span>
+                      )}
                       {describeSchedule(habit.weekdays)}
+                      {habit.category && (
+                        <span className="text-ink-muted"> · {habit.category}</span>
+                      )}
                       {habit.goalTitle && (
                         <span className="text-ink-muted"> · for {habit.goalTitle}</span>
                       )}
                     </p>
+                    {habit.notes && (
+                      <p className="text-xs text-ink-muted italic">{habit.notes}</p>
+                    )}
                   </div>
                   <button type="button" className="btn" onClick={() => setEditing(habit.id)}>
                     Edit
@@ -129,6 +147,10 @@ function HabitForm({
   const [name, setName] = useState(habit?.name ?? "");
   const [days, setDays] = useState<Set<number>>(() => new Set(habit?.weekdays ?? []));
   const [goalId, setGoalId] = useState<string>(habit?.goalId ?? "");
+  const [startTime, setStartTime] = useState(shortTime(habit?.startTime) ?? "");
+  const [endTime, setEndTime] = useState(shortTime(habit?.endTime) ?? "");
+  const [category, setCategory] = useState(habit?.category ?? "");
+  const [notes, setNotes] = useState(habit?.notes ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const prefix = habit?.id ?? "new";
@@ -144,7 +166,15 @@ function HabitForm({
   async function save() {
     setError(null);
     setSaving(true);
-    const input = { name, weekdays: [...days], goalId: goalId || null };
+    const input = {
+      name,
+      weekdays: [...days],
+      goalId: goalId || null,
+      startTime: startTime || null,
+      endTime: startTime ? endTime || null : null,
+      category: category.trim() || null,
+      notes: notes.trim() || null,
+    };
     const result = habit ? await updateHabit({ ...input, id: habit.id }) : await createHabit(input);
     setSaving(false);
     if (!result.ok) {
@@ -155,6 +185,10 @@ function HabitForm({
       setName("");
       setDays(new Set());
       setGoalId("");
+      setStartTime("");
+      setEndTime("");
+      setCategory("");
+      setNotes("");
     }
     onDone?.();
     router.refresh();
@@ -223,6 +257,78 @@ function HabitForm({
           {days.size === 0 ? "Pick at least one day." : describeSchedule([...days])}
         </p>
       </fieldset>
+
+      <fieldset className="space-y-1.5">
+        <legend className="text-sm font-medium">
+          Time <span className="font-normal text-ink-muted">(optional)</span>
+        </legend>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="time"
+            className="field max-w-[8.5rem] tabular"
+            aria-label="Starts at"
+            value={startTime}
+            onChange={(event) => setStartTime(event.target.value)}
+          />
+          <span className="text-sm text-ink-muted">to</span>
+          <input
+            type="time"
+            className="field max-w-[8.5rem] tabular"
+            aria-label="Ends at (optional)"
+            value={endTime}
+            disabled={!startTime}
+            onChange={(event) => setEndTime(event.target.value)}
+          />
+          {(startTime || endTime) && (
+            <button
+              type="button"
+              className="text-sm font-medium text-accent underline underline-offset-4"
+              onClick={() => {
+                setStartTime("");
+                setEndTime("");
+              }}
+            >
+              No set time
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-ink-muted">
+          Today&apos;s list runs in time order. Leave the end empty if there isn&apos;t one.
+        </p>
+      </fieldset>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <label htmlFor={`${prefix}-habit-category`} className="text-sm font-medium">
+            Category <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <input
+            id={`${prefix}-habit-category`}
+            className="field"
+            list="habit-categories"
+            value={category}
+            placeholder="Fitness, Faith, Home..."
+            onChange={(event) => setCategory(event.target.value)}
+          />
+          <datalist id="habit-categories">
+            {SUGGESTED_CATEGORIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor={`${prefix}-habit-notes`} className="text-sm font-medium">
+            Note <span className="font-normal text-ink-muted">(optional)</span>
+          </label>
+          <input
+            id={`${prefix}-habit-notes`}
+            className="field"
+            value={notes}
+            placeholder="Backup days: Tue, Thu, Sat"
+            onChange={(event) => setNotes(event.target.value)}
+          />
+        </div>
+      </div>
 
       {goals.length > 0 && (
         <div className="space-y-1.5">

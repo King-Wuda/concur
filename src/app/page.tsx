@@ -17,6 +17,7 @@ import {
 import { nextDayCode } from "@/lib/workouts";
 import { formatSteps } from "@/lib/body";
 import {
+  getStepGoal,
   GoalsNotSetUpError,
   listBodyLogs,
   listChecks,
@@ -27,10 +28,12 @@ import {
 import { DailyQuote } from "@/components/goals/DailyQuote";
 import { quoteForDay } from "@/lib/quotes";
 import {
+  byTime,
   deadlineStatus,
   describeDeadline,
   isDue,
   milestoneProgress,
+  shortTime,
 } from "@/lib/routine";
 
 export const metadata = { title: "Concur" };
@@ -170,8 +173,8 @@ export default async function HomePage() {
             <>
               {goals.due.length > 0 ? (
                 <ul className="space-y-1 text-sm">
-                  {goals.due.map((habit) => (
-                    <li key={habit.name} className="flex items-center gap-2">
+                  {goals.due.map((habit, index) => (
+                    <li key={index} className="flex items-center gap-2">
                       <span
                         aria-hidden
                         className="inline-flex size-4 items-center justify-center rounded border text-[0.6rem]"
@@ -193,6 +196,9 @@ export default async function HomePage() {
                         }
                       >
                         {habit.name}
+                      </span>
+                      <span className="ml-auto text-xs text-ink-muted tabular">
+                        {habit.time}
                       </span>
                     </li>
                   ))}
@@ -283,18 +289,34 @@ async function workoutGlance(
 
 async function goalsGlance(supabase: DB, userId: string, today: string) {
   try {
-    const [habits, checks, goals, quotes] = await Promise.all([
-      listHabits(supabase, userId),
-      listChecks(supabase, userId, today),
-      listGoals(supabase, userId),
-      listQuotes(supabase, userId),
-    ]);
-    const due = habits
-      .filter((habit) => isDue(habit, today))
-      .map((habit) => ({
-        name: habit.name,
-        done: checks.get(habit.id)?.has(today) ?? false,
-      }));
+    const [habits, checks, goals, quotes, stepGoal, todayLogs] =
+      await Promise.all([
+        listHabits(supabase, userId),
+        listChecks(supabase, userId, today),
+        listGoals(supabase, userId),
+        listQuotes(supabase, userId),
+        getStepGoal(supabase, userId),
+        listBodyLogs(supabase, userId, today),
+      ]);
+    const steps = todayLogs.find((log) => log.date === today)?.steps ?? null;
+    const due = [
+      ...byTime(habits.filter((habit) => isDue(habit, today))).map(
+        (habit) => ({
+          name: habit.name,
+          time: shortTime(habit.start_time),
+          done: checks.get(habit.id)?.has(today) ?? false,
+        }),
+      ),
+      ...(stepGoal
+        ? [
+            {
+              name: `${formatSteps(stepGoal)} steps`,
+              time: null,
+              done: steps !== null && steps >= stepGoal,
+            },
+          ]
+        : []),
+    ];
     const first = goals.find((goal) => !goal.achieved_at);
     const progress = first ? milestoneProgress(first.milestones) : null;
     return {

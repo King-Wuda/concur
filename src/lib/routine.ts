@@ -213,3 +213,66 @@ export function reorder<T>(items: readonly T[], index: number, by: number): T[] 
   next.splice(target, 0, item);
   return next;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Times and categories                                                       */
+/* -------------------------------------------------------------------------- */
+
+/** Categories offered when adding a habit or goal; any other word works too. */
+export const SUGGESTED_CATEGORIES = [
+  "Fitness",
+  "Mindset",
+  "Faith",
+  "Self-care",
+  "Home",
+  "Personal",
+  "Work",
+  "Career",
+  "Learning",
+  "Admin",
+] as const;
+
+/** "05:00:00" or "05:00" -> "05:00"; null stays null. */
+export function shortTime(time: string | null | undefined): string | null {
+  if (!time) return null;
+  const match = /^(\d{2}):(\d{2})/.exec(time);
+  return match ? `${match[1]}:${match[2]}` : null;
+}
+
+/** "05:00–07:00", "07:00" (no end), or null when no time is set. */
+export function formatTimeRange(start: string | null, end: string | null): string | null {
+  const from = shortTime(start);
+  if (!from) return null;
+  const to = shortTime(end);
+  return to ? `${from}–${to}` : from;
+}
+
+/**
+ * The day's order: by start time, earliest first; things with no time set
+ * come after, in the order they were added.
+ */
+export function byTime<T extends { start_time: string | null; position: number }>(
+  items: readonly T[],
+): T[] {
+  return [...items].sort((a, b) => {
+    const at = shortTime(a.start_time);
+    const bt = shortTime(b.start_time);
+    if (at && bt && at !== bt) return at < bt ? -1 : 1;
+    if (at && !bt) return -1;
+    if (!at && bt) return 1;
+    return a.position - b.position;
+  });
+}
+
+/** "15 Oct – 16 Oct 2026" for a focus block, or just the deadline. */
+export function formatDateSpan(start: string | null, end: string | null): string | null {
+  if (start && end) {
+    const [sy, sm, sd] = start.split("-").map(Number);
+    const sameYear = start.slice(0, 4) === end.slice(0, 4);
+    const from = `${sd} ${MONTHS[sm - 1].slice(0, 3)}${sameYear ? "" : ` ${sy}`}`;
+    return `${from} – ${formatShortDate(end)}`;
+  }
+  if (end) return `by ${formatShortDate(end)}`;
+  if (start) return `from ${formatShortDate(start)}`;
+  return null;
+}

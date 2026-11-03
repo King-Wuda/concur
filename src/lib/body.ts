@@ -61,3 +61,33 @@ function shift(date: string, days: number): string {
   const [year, month, day] = date.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
 }
+
+/**
+ * Days in a row the step goal was hit, ending today if today already counts,
+ * otherwise ending yesterday - tonight's steps are not missed until tomorrow.
+ */
+export function stepStreak(logs: readonly BodyLog[], goal: number, today: string): number {
+  const hit = new Set(
+    logs.filter((log) => log.steps !== null && log.steps >= goal).map((log) => log.date),
+  );
+  let day = hit.has(today) ? today : shift(today, -1);
+  let streak = 0;
+  while (hit.has(day)) {
+    streak += 1;
+    day = shift(day, -1);
+  }
+  return streak;
+}
+
+/** Of the last `days` days before today that have steps logged, how many hit the goal. */
+export function stepGoalHits(
+  logs: readonly BodyLog[],
+  goal: number,
+  today: string,
+  days = 7,
+): { hit: number; logged: number } {
+  const recent = logs.filter(
+    (log) => log.steps !== null && log.date <= today && log.date > shift(today, -days),
+  );
+  return { hit: recent.filter((log) => log.steps! >= goal).length, logged: recent.length };
+}

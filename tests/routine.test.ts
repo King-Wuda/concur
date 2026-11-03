@@ -167,3 +167,45 @@ test("one quote a day: the same all day, never yesterday's, and all get a turn",
     assert.equal(seen.size, count);
   }
 });
+
+test("the day's routine runs in time order, untimed things last", async () => {
+  const { byTime, formatTimeRange, shortTime } = await import("@/lib/routine");
+  const items = [
+    { name: "Bible study", start_time: "21:00:00", position: 0 },
+    { name: "Cooking", start_time: null, position: 1 },
+    { name: "Gym", start_time: "05:00:00", position: 2 },
+    { name: "Room upkeep", start_time: "06:00", position: 3 },
+    { name: "Laundry", start_time: null, position: 4 },
+  ];
+  assert.deepEqual(
+    byTime(items).map((i) => i.name),
+    ["Gym", "Room upkeep", "Bible study", "Cooking", "Laundry"],
+  );
+  assert.equal(formatTimeRange("05:00:00", "07:00:00"), "05:00–07:00");
+  assert.equal(formatTimeRange("07:00", null), "07:00");
+  assert.equal(formatTimeRange(null, null), null);
+  assert.equal(shortTime("21:30:00"), "21:30");
+});
+
+test("focus blocks show their dates", async () => {
+  const { formatDateSpan } = await import("@/lib/routine");
+  assert.equal(formatDateSpan("2026-10-15", "2026-10-16"), "15 Oct – 16 Oct 2026");
+  assert.equal(formatDateSpan("2026-12-28", "2027-01-04"), "28 Dec 2026 – 4 Jan 2027");
+  assert.equal(formatDateSpan(null, "2026-11-08"), "by 8 Nov 2026");
+  assert.equal(formatDateSpan(null, null), null);
+});
+
+test("the step streak counts days at or over the goal", async () => {
+  const { stepStreak, stepGoalHits } = await import("@/lib/body");
+  const logs = [
+    { date: "2026-10-31", weight_kg: null, steps: 12000 },
+    { date: "2026-11-01", weight_kg: null, steps: 9000 },
+    { date: "2026-11-02", weight_kg: null, steps: 10000 },
+    { date: "2026-11-03", weight_kg: null, steps: 11000 },
+  ];
+  // Tonight not logged yet: the streak runs up to yesterday.
+  assert.equal(stepStreak(logs.slice(0, 3), 10000, WED), 0);
+  assert.equal(stepStreak(logs, 10000, WED), 2);
+  assert.equal(stepStreak(logs, 10000, "2026-11-03"), 2);
+  assert.deepEqual(stepGoalHits(logs, 10000, "2026-11-03"), { hit: 3, logged: 4 });
+});

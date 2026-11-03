@@ -3,8 +3,16 @@ import { redirect } from "next/navigation";
 import { BodyLogForm } from "@/components/workouts/BodyLogForm";
 import { BodyTrends } from "@/components/workouts/BodyTrends";
 import { GoalsSetupNeeded } from "@/components/goals/GoalsSetupNeeded";
-import { averageSteps, formatSteps, weeklyChange, withWeightAverage } from "@/lib/body";
-import { GoalsNotSetUpError, listBodyLogs } from "@/lib/goals-data";
+import {
+  averageSteps,
+  formatSteps,
+  stepGoalHits,
+  stepStreak,
+  weeklyChange,
+  withWeightAverage,
+} from "@/lib/body";
+import { getStepGoal, GoalsNotSetUpError, listBodyLogs } from "@/lib/goals-data";
+import { StepGoalForm } from "@/components/workouts/StepGoalForm";
 import { isIsoDate } from "@/lib/month";
 import { todayInSouthAfrica } from "@/lib/period";
 import { addDays, formatDay } from "@/lib/routine";
@@ -28,9 +36,12 @@ export default async function BodyPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  let logs;
+  let logs, stepGoal;
   try {
-    logs = await listBodyLogs(supabase, user.id, addDays(today, -89));
+    [logs, stepGoal] = await Promise.all([
+      listBodyLogs(supabase, user.id, addDays(today, -89)),
+      getStepGoal(supabase, user.id),
+    ]);
   } catch (error) {
     if (error instanceof GoalsNotSetUpError) return <GoalsSetupNeeded />;
     throw error;
@@ -40,6 +51,8 @@ export default async function BodyPage({
   const change = weeklyChange(logs, today);
   const steps = averageSteps(logs, today);
   const recent = [...logs].reverse().slice(0, 14);
+  const streak = stepGoal ? stepStreak(logs, stepGoal, today) : 0;
+  const hits = stepGoal ? stepGoalHits(logs, stepGoal, today) : null;
 
   return (
     <div className="space-y-5">
@@ -75,9 +88,27 @@ export default async function BodyPage({
           </p>
           <p className="text-xs text-ink-muted">Over the last 7 days</p>
         </div>
+        <div className="card space-y-2 p-4 sm:col-span-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-sm text-ink-secondary">Daily step goal</p>
+            {stepGoal && hits && (
+              <p className="text-sm tabular">
+                <span className="text-ink-secondary">
+                  Hit {hits.hit} of the last {hits.logged} logged days
+                </span>
+                {streak > 0 && (
+                  <span className="ml-2 font-medium" style={{ color: "var(--good-ink)" }}>
+                    {streak} in a row
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+          <StepGoalForm goal={stepGoal} />
+        </div>
       </section>
 
-      <BodyTrends logs={withWeightAverage(logs)} />
+      <BodyTrends logs={withWeightAverage(logs)} stepGoal={stepGoal} />
 
       {recent.length > 0 && (
         <section className="space-y-2">

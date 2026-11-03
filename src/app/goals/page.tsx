@@ -5,7 +5,9 @@ import { GoalsSetupNeeded } from "@/components/goals/GoalsSetupNeeded";
 import { TodayChecklist } from "@/components/goals/TodayChecklist";
 import { DailyQuote } from "@/components/goals/DailyQuote";
 import {
+  getStepGoal,
   GoalsNotSetUpError,
+  listBodyLogs,
   listChecks,
   listHabits,
   listQuotes,
@@ -13,7 +15,14 @@ import {
 import { isIsoDate } from "@/lib/month";
 import { todayInSouthAfrica } from "@/lib/period";
 import { quoteForDay } from "@/lib/quotes";
-import { addDays, describeSchedule, formatDay, isDue } from "@/lib/routine";
+import {
+  addDays,
+  byTime,
+  describeSchedule,
+  formatDay,
+  formatTimeRange,
+  isDue,
+} from "@/lib/routine";
 import { createClient } from "@/lib/supabase/server";
 
 export const metadata = { title: "Today - Goals" };
@@ -38,21 +47,24 @@ export default async function TodayPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  let habits, checks, quotes;
+  let habits, checks, quotes, stepGoal, dayLogs;
   try {
-    [habits, checks, quotes] = await Promise.all([
+    [habits, checks, quotes, stepGoal, dayLogs] = await Promise.all([
       listHabits(supabase, user.id),
       listChecks(supabase, user.id, earliest),
       listQuotes(supabase, user.id),
+      getStepGoal(supabase, user.id),
+      listBodyLogs(supabase, user.id, date),
     ]);
   } catch (error) {
     if (error instanceof GoalsNotSetUpError) return <GoalsSetupNeeded />;
     throw error;
   }
 
-  const due = habits.filter(
-    (habit) => isDue(habit, date) && habit.created_at <= date,
+  const due = byTime(
+    habits.filter((habit) => isDue(habit, date) && habit.created_at <= date),
   );
+  const steps = dayLogs.find((log) => log.date === date)?.steps ?? null;
 
   return (
     <div className="space-y-5">
@@ -73,7 +85,9 @@ export default async function TodayPage({
                 ? "Yesterday"
                 : formatDay(date)}
           </h1>
-          <p className="text-sm text-ink-muted">{formatDay(date)}</p>
+          {(date === today || date === addDays(today, -1)) && (
+            <p className="text-sm text-ink-muted">{formatDay(date)}</p>
+          )}
         </div>
         <Link
           href={
@@ -91,7 +105,7 @@ export default async function TodayPage({
 
       <DailyQuote quotes={quotes} todays={quoteForDay(quotes, date)} />
 
-      {habits.length === 0 ? (
+      {habits.length === 0 && !stepGoal ? (
         <section className="card space-y-3 p-4 sm:p-5">
           <p className="text-sm text-ink-secondary">
             Your routine is empty. Add the things you do on a schedule -
@@ -106,10 +120,14 @@ export default async function TodayPage({
         <TodayChecklist
           key={date}
           date={date}
+          steps={stepGoal ? { goal: stepGoal, logged: steps } : null}
           habits={due.map((habit) => ({
             id: habit.id,
             name: habit.name,
             schedule: describeSchedule(habit.weekdays),
+            time: formatTimeRange(habit.start_time, habit.end_time),
+            category: habit.category,
+            notes: habit.notes,
             done: checks.get(habit.id)?.has(date) ?? false,
           }))}
         />

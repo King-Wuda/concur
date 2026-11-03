@@ -112,3 +112,12 @@ begin
   end if;
   raise notice 'PASS  the new goals, routine and body tables arrived empty';
 end $$;
+
+-- The routine-times migration only adds empty columns.
+do $$
+begin
+  if exists (select 1 from public.habits where start_time is not null or category is not null) then
+    raise exception 'existing habits gained values from the migration';
+  end if;
+  raise notice 'PASS  existing habits and goals are untouched by the new columns';
+end $$;

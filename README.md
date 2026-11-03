@@ -17,7 +17,9 @@ on, one section each, with a Home hub that shows where each one stands today.
 - **Goals** (`/goals`): life goals in priority order, each with a deadline or
   open-ended and a checklist of milestones, plus the routine: habits done on
   chosen weekdays, ticked off on each day's Today list, with streaks and
-  eight-week consistency. A habit can be linked to the goal it serves. Your
+  eight-week consistency. Habits can have a start and end time - Today runs
+  in time order - a category and a note. A habit can be linked to the goal it
+  serves. Goals have categories too, and a start date for focus blocks. Your
   own quotes and affirmations live here too, and one is picked each day to
   show on Home and Today - the same one all day, every one taking its turn
   before any repeats.
@@ -42,7 +44,8 @@ page (`src/app/page.tsx`) and an entry in `SECTIONS` in
   a logged session keeps its own copy of what was done, so editing the plan
   never rewrites history.
 - **Body.** Morning weight and the day's steps, saved separately so steps
-  logged at night never touch the morning's weight. Charts show daily weight
+  logged at night never touch the morning's weight. A daily step goal shows
+  on Today and ticks itself once the day's steps reach it. Charts show daily weight
   with its 7-day average, and steps per day.
 - The plan is seeded from the spreadsheet the first time Workouts is opened.
   No AI is involved anywhere in Workouts.
@@ -145,7 +148,8 @@ payday (`months.period_start`, null meaning the usual 24th), and
 `0005_deficit.sql` adds the deficit carried in from the month before, and
 `0006_workouts.sql` adds the workout plan and logged sessions, and
 `0007_goals_routine_body.sql` adds goals, milestones, the routine, the body
-log and quotes.
+log and quotes; `0008_routine_times.sql` adds habit times and categories, goal
+categories and start dates, and the step goal.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

@@ -335,3 +335,26 @@ export async function saveBodyLog(raw: BodyInput): Promise<ActionResult> {
 function isMissing(error: { code?: string } | null): boolean {
   return error?.code === "42P01" || error?.code === "PGRST205";
 }
+
+/** Sets (or, with null, clears) the daily step goal. */
+export async function saveStepGoal(goal: number | null): Promise<ActionResult> {
+  try {
+    const value = z.number().int().min(1).max(200_000).nullable().parse(goal);
+    const { supabase, userId } = await session();
+    const { error } = await supabase
+      .from("user_settings")
+      .upsert({ user_id: userId, step_goal: value }, { onConflict: "user_id" });
+    if (isMissing(error)) {
+      return {
+        ok: false,
+        error: "Run supabase/migrations/0008_routine_times.sql in the Supabase SQL editor first.",
+      };
+    }
+    if (error) throw error;
+    revalidateWorkouts();
+    revalidatePath("/goals", "layout");
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}

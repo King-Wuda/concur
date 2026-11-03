@@ -18,7 +18,9 @@ import { isIsoDate } from "@/lib/month";
 import {
   deadlineStatus,
   describeDeadline,
+  formatDateSpan,
   formatShortDate,
+  SUGGESTED_CATEGORIES,
   milestoneProgress,
   reorder,
   type Consistency,
@@ -110,6 +112,8 @@ function NewGoal() {
   const [title, setTitle] = useState("");
   const [hasDeadline, setHasDeadline] = useState(true);
   const [deadline, setDeadline] = useState("");
+  const [category, setCategory] = useState("");
+  const [startDate, setStartDate] = useState("");
   const [milestones, setMilestones] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
@@ -134,6 +138,8 @@ function NewGoal() {
       title,
       notes: notes.trim() || null,
       deadline: hasDeadline ? deadline : null,
+      category: category.trim() || null,
+      startDate: startDate || null,
       milestones: milestones
         .split("\n")
         .map((line) => line.trim())
@@ -146,6 +152,8 @@ function NewGoal() {
     }
     setTitle("");
     setDeadline("");
+    setCategory("");
+    setStartDate("");
     setMilestones("");
     setNotes("");
     setOpen(false);
@@ -212,6 +220,14 @@ function NewGoal() {
           onChange={(event) => setMilestones(event.target.value)}
         />
       </div>
+
+      <GoalExtras
+        idPrefix="goal"
+        category={category}
+        onCategory={setCategory}
+        startDate={startDate}
+        onStartDate={setStartDate}
+      />
 
       <div className="space-y-1.5">
         <label htmlFor="goal-notes" className="text-sm font-medium">
@@ -298,13 +314,21 @@ function GoalCard({
           {rank}
         </span>
         <div className="min-w-0 flex-1 space-y-1.5">
+          {goal.category && (
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+              {goal.category}
+            </p>
+          )}
           <h2 className="font-semibold leading-snug">{goal.title}</h2>
           <p className="text-sm">
             <span style={deadlineColor ? { color: deadlineColor } : undefined} className="font-medium">
               {describeDeadline(status)}
             </span>
-            {goal.deadline && (
-              <span className="text-ink-muted"> · by {formatShortDate(goal.deadline)}</span>
+            {formatDateSpan(goal.start_date, goal.deadline) && (
+              <span className="text-ink-muted">
+                {" "}
+                · {formatDateSpan(goal.start_date, goal.deadline)}
+              </span>
             )}
           </p>
           {progress.total > 0 && (
@@ -475,6 +499,8 @@ function EditGoal({ goal, onDone }: { goal: Goal; onDone: () => void }) {
   const [title, setTitle] = useState(goal.title);
   const [deadline, setDeadline] = useState(goal.deadline ?? "");
   const [notes, setNotes] = useState(goal.notes ?? "");
+  const [category, setCategory] = useState(goal.category ?? "");
+  const [startDate, setStartDate] = useState(goal.start_date ?? "");
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
@@ -484,6 +510,8 @@ function EditGoal({ goal, onDone }: { goal: Goal; onDone: () => void }) {
       title,
       notes: notes.trim() || null,
       deadline: deadline ? deadline : null,
+      category: category.trim() || null,
+      startDate: startDate || null,
     });
     if (!result.ok) {
       setError(result.error);
@@ -525,6 +553,13 @@ function EditGoal({ goal, onDone }: { goal: Goal; onDone: () => void }) {
           )}
         </div>
       </div>
+      <GoalExtras
+        idPrefix={`edit-${goal.id}`}
+        category={category}
+        onCategory={setCategory}
+        startDate={startDate}
+        onStartDate={setStartDate}
+      />
       <div className="space-y-1.5">
         <label htmlFor={`edit-notes-${goal.id}`} className="text-sm font-medium">
           Why it matters
@@ -579,5 +614,55 @@ function AchievedGoal({ goal }: { goal: Goal }) {
         Reopen
       </button>
     </li>
+  );
+}
+
+/** Category, and a start date for a focus block that runs between two dates. */
+function GoalExtras({
+  idPrefix,
+  category,
+  onCategory,
+  startDate,
+  onStartDate,
+}: {
+  idPrefix: string;
+  category: string;
+  onCategory: (value: string) => void;
+  startDate: string;
+  onStartDate: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <div className="space-y-1.5">
+        <label htmlFor={`${idPrefix}-category`} className="text-sm font-medium">
+          Category <span className="font-normal text-ink-muted">(optional)</span>
+        </label>
+        <input
+          id={`${idPrefix}-category`}
+          className="field"
+          list="goal-categories"
+          value={category}
+          placeholder="Career, Learning, Admin..."
+          onChange={(event) => onCategory(event.target.value)}
+        />
+        <datalist id="goal-categories">
+          {SUGGESTED_CATEGORIES.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
+      </div>
+      <div className="space-y-1.5">
+        <label htmlFor={`${idPrefix}-start`} className="text-sm font-medium">
+          Starts <span className="font-normal text-ink-muted">(optional, for a focus block)</span>
+        </label>
+        <input
+          id={`${idPrefix}-start`}
+          type="date"
+          className="field"
+          value={startDate}
+          onChange={(event) => onStartDate(event.target.value)}
+        />
+      </div>
+    </div>
   );
 }

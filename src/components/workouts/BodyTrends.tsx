@@ -9,6 +9,7 @@ import {
   ResponsiveContainer,
   Tooltip,
   XAxis,
+  ReferenceLine,
   YAxis,
 } from "recharts";
 
@@ -49,7 +50,7 @@ const tooltipStyle = {
  * but the dates. Weight draws each morning as a faint dot and the 7-day
  * average as the line to read; steps are a bar per day.
  */
-export function BodyTrends({ logs }: { logs: Point[] }) {
+export function BodyTrends({ logs, stepGoal }: { logs: Point[]; stepGoal: number | null }) {
   const weights = logs.filter((log) => log.weight_kg !== null);
   const steps = logs.filter((log) => log.steps !== null);
 
@@ -104,12 +105,16 @@ export function BodyTrends({ logs }: { logs: Point[] }) {
                   minTickGap={24}
                 />
                 <YAxis
-                  domain={["dataMin - 1", "dataMax + 1"]}
+                  // Whole kilos either side of the data, so ticks land on whole numbers.
+                  domain={[
+                    (min: number) => Math.floor(min) - 1,
+                    (max: number) => Math.ceil(max) + 1,
+                  ]}
+                  allowDecimals={false}
                   tick={axis}
                   tickLine={false}
                   axisLine={false}
                   width={44}
-                  tickFormatter={(v: number) => String(Math.round(v))}
                 />
                 <Tooltip
                   contentStyle={tooltipStyle}
@@ -176,6 +181,20 @@ export function BodyTrends({ logs }: { logs: Point[] }) {
                   labelFormatter={(value) => label(String(value))}
                   formatter={(value) => [formatSteps(Number(value)), "Steps"]}
                 />
+                {stepGoal && (
+                  <ReferenceLine
+                    y={stepGoal}
+                    ifOverflow="extendDomain"
+                    stroke="var(--ink-secondary)"
+                    strokeDasharray="4 4"
+                    label={{
+                      value: `Goal ${formatSteps(stepGoal)}`,
+                      position: "insideTopRight",
+                      fontSize: 11,
+                      fill: "var(--ink-secondary)",
+                    }}
+                  />
+                )}
                 <Bar
                   dataKey="steps"
                   fill="var(--series-3)"
