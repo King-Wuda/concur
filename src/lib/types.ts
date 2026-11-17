@@ -43,6 +43,8 @@ export type ReceiptRow = {
   image_path: string | null;
   note: string | null;
   created_at: string;
+  /** The trip it is on, if any (migration 0009). */
+  event_id?: string | null;
 };
 
 export type ReceiptWithItems = ReceiptRow & { line_items: LineItemRow[] };

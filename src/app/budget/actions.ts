@@ -308,57 +308,90 @@ export async function assignReceiptToTrip(
   try {
     const input = TripAssignment.parse(raw);
     const { supabase, userId } = await session();
-
-    const receipt = await supabase
-      .from("receipts")
-      .select("date, category")
-      .eq("id", input.receiptId)
-      .eq("user_id", userId)
-      .single();
-    if (receipt.error) throw receipt.error;
-
-    const trip = input.eventId
-      ? await resolveTrip(supabase, userId, input.eventId, input.paidBy ?? null)
-      : null;
-    const month =
-      trip && !trip.mine
-        ? null
-        : await ensureMonth(
-            supabase,
-            userId,
-            await budgetMonthOf(supabase, userId, receipt.data.date as string),
-          );
-
-    // On a trip, the receipt and its lines count under the trip's category;
-    // taken off one, they go to Miscellaneous to be re-sorted.
-    const category = trip ? trip.category : "Miscellaneous";
-    const lines = await supabase
-      .from("line_items")
-      .update({ category })
-      .eq("receipt_id", input.receiptId)
-      .eq("user_id", userId);
-    if (lines.error) throw lines.error;
-
-    const { error } = await supabase
-      .from("receipts")
-      .update({
-        category,
-        month_id: month?.id ?? null,
-        event_id: trip?.eventId ?? null,
-        paid_by: trip?.paidBy ?? null,
-        event_category: trip
-          ? (input.eventCategory ?? guessEventCategory(receipt.data.category as string))
-          : null,
-      })
-      .eq("id", input.receiptId)
-      .eq("user_id", userId);
-    if (error) throw error;
-
+    await assign(supabase, userId, input);
     revalidateMonth();
     return { ok: true };
   } catch (error) {
     return failure(error);
   }
+}
+
+/**
+ * Moves receipts already saved onto a trip, as paid by you - what was scanned
+ * into the month before the trip existed. Each keeps its pay period and moves
+ * into the trip's category; who paid can be changed on the trip afterwards.
+ */
+export async function moveReceiptsToTrip(
+  receiptIds: string[],
+  eventId: string,
+): Promise<ActionResult<{ moved: number }>> {
+  try {
+    const ids = z
+      .array(z.string().uuid())
+      .min(1, "Pick at least one receipt.")
+      .max(100)
+      .parse(receiptIds);
+    z.string().uuid().parse(eventId);
+    const { supabase, userId } = await session();
+    for (const receiptId of ids) {
+      await assign(supabase, userId, { receiptId, eventId, paidBy: null, eventCategory: null });
+    }
+    revalidateMonth();
+    return { ok: true, data: { moved: ids.length } };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+async function assign(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  input: z.output<typeof TripAssignment>,
+): Promise<void> {
+  const receipt = await supabase
+    .from("receipts")
+    .select("date, category")
+    .eq("id", input.receiptId)
+    .eq("user_id", userId)
+    .single();
+  if (receipt.error) throw receipt.error;
+
+  const trip = input.eventId
+    ? await resolveTrip(supabase, userId, input.eventId, input.paidBy ?? null)
+    : null;
+  const month =
+    trip && !trip.mine
+      ? null
+      : await ensureMonth(
+          supabase,
+          userId,
+          await budgetMonthOf(supabase, userId, receipt.data.date as string),
+        );
+
+  // On a trip, the receipt and its lines count under the trip's category;
+  // taken off one, they go to Miscellaneous to be re-sorted.
+  const category = trip ? trip.category : "Miscellaneous";
+  const lines = await supabase
+    .from("line_items")
+    .update({ category })
+    .eq("receipt_id", input.receiptId)
+    .eq("user_id", userId);
+  if (lines.error) throw lines.error;
+
+  const { error } = await supabase
+    .from("receipts")
+    .update({
+      category,
+      month_id: month?.id ?? null,
+      event_id: trip?.eventId ?? null,
+      paid_by: trip?.paidBy ?? null,
+      event_category: trip
+        ? (input.eventCategory ?? guessEventCategory(receipt.data.category as string))
+        : null,
+    })
+    .eq("id", input.receiptId)
+    .eq("user_id", userId);
+  if (error) throw error;
 }
 
 /** Removes a receipt, its line items (by cascade) and its stored file. */

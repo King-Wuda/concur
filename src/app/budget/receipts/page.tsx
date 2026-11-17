@@ -6,6 +6,7 @@ import { MonthSwitcher } from "@/components/MonthSwitcher";
 import { IncomeList } from "@/components/IncomeList";
 import { ReceiptList } from "@/components/ReceiptList";
 import { getMonthSnapshot, resolveMonth } from "@/lib/data";
+import { listTripOptions } from "@/lib/events-data";
 import { formatRand } from "@/lib/money";
 import { formatMonthLong } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
@@ -26,7 +27,10 @@ export default async function ReceiptsPage({
   if (!user) redirect("/login");
 
   const { monthKey, currentKey, months } = await resolveMonth(supabase, user.id, m);
-  const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
+  const [snapshot, trips] = await Promise.all([
+    getMonthSnapshot(supabase, user.id, monthKey),
+    listTripOptions(supabase, user.id),
+  ]);
   const knownMonths = months.map((row) => row.month);
 
   const total = snapshot.receipts.reduce((acc, r) => acc + (Number(r.total) || 0), 0);
@@ -80,7 +84,7 @@ export default async function ReceiptsPage({
             No expenses logged for this month yet.
           </p>
         ) : (
-          <ReceiptList receipts={snapshot.receipts} />
+          <ReceiptList receipts={snapshot.receipts} trips={trips} />
         )}
       </section>
     </div>

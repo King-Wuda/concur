@@ -177,3 +177,71 @@ export async function getEvent(
   check(error);
   return data ? shape(data as unknown as RawEvent) : null;
 }
+
+/** A receipt not on any trip yet, that could be moved onto one. */
+export type MovableReceipt = {
+  id: string;
+  store_name: string;
+  date: string;
+  total: number;
+  category: Category;
+};
+
+/**
+ * Receipts not on any trip, around a trip's dates - a week either side, in
+ * case something was booked ahead - or the last two months for a trip with no
+ * dates. Newest first.
+ */
+export function movableRange(
+  event: Pick<EventRow, "start_date" | "end_date">,
+  today: string,
+): { from: string; to: string } {
+  const shift = (iso: string, days: number) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+  };
+  return {
+    from: event.start_date ? shift(event.start_date, -7) : shift(today, -60),
+    to: event.end_date
+      ? shift(event.end_date, 7)
+      : event.start_date
+        ? shift(event.start_date, 30)
+        : today,
+  };
+}
+
+export async function listMovableReceipts(
+  supabase: DB,
+  userId: string,
+  event: Pick<EventRow, "start_date" | "end_date">,
+  today: string,
+): Promise<MovableReceipt[]> {
+  const { from, to } = movableRange(event, today);
+
+  const { data, error } = await supabase
+    .from("receipts")
+    .select("id, store_name, date, total, category")
+    .eq("user_id", userId)
+    .is("event_id", null)
+    .gte("date", from)
+    .lte("date", to)
+    .order("date", { ascending: false })
+    .limit(150);
+  check(error);
+  return ((data ?? []) as MovableReceipt[]).map((r) => ({ ...r, total: Number(r.total) || 0 }));
+}
+
+/** Just enough about each trip to offer it in a picker. */
+export type TripOption = { id: string; name: string; start_date: string | null };
+
+export async function listTripOptions(supabase: DB, userId: string): Promise<TripOption[]> {
+  const { data, error } = await supabase
+    .from("events")
+    .select("id, name, start_date")
+    .eq("user_id", userId)
+    .order("start_date", { ascending: false, nullsFirst: true })
+    .order("created_at", { ascending: false });
+  if (isMissing(error)) return [];
+  if (error) throw error;
+  return (data ?? []) as TripOption[];
+}

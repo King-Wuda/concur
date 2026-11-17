@@ -13,6 +13,8 @@ import {
   type DraftLineItem,
 } from "@/components/LineItemEditor";
 import { CategoryOptions, useCategoryColor } from "@/components/CategoriesContext";
+import { ReceiptTripControl } from "@/components/events/ReceiptTripControl";
+import type { TripOption } from "@/lib/events-data";
 import type { Category } from "@/lib/categories";
 import { formatRand, parseRand, round2 } from "@/lib/money";
 import type { ReceiptWithItems } from "@/lib/types";
@@ -21,7 +23,14 @@ import type { ReceiptWithItems } from "@/lib/types";
  * The month's receipts. Each row expands into an editor, so a category the
  * model got wrong can be fixed in two taps without leaving the list.
  */
-export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
+export function ReceiptList({
+  receipts,
+  trips = [],
+}: {
+  receipts: ReceiptWithItems[];
+  /** Trips a receipt can be moved onto. */
+  trips?: TripOption[];
+}) {
   const colorFor = useCategoryColor();
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -43,7 +52,8 @@ export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{receipt.store_name}</span>
               <span className="text-xs text-ink-muted">
-                {receipt.date} · {receipt.category} · {receipt.line_items.length} item
+                {receipt.date} · {receipt.category}
+                {receipt.event_id && " · on a trip"} · {receipt.line_items.length} item
                 {receipt.line_items.length === 1 ? "" : "s"}
               </span>
             </span>
@@ -52,7 +62,7 @@ export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
           </button>
 
           {openId === receipt.id && (
-            <ReceiptEditor receipt={receipt} onClose={() => setOpenId(null)} />
+            <ReceiptEditor receipt={receipt} trips={trips} onClose={() => setOpenId(null)} />
           )}
         </li>
       ))}
@@ -62,9 +72,11 @@ export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
 
 function ReceiptEditor({
   receipt,
+  trips,
   onClose,
 }: {
   receipt: ReceiptWithItems;
+  trips: TripOption[];
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -193,6 +205,8 @@ function ReceiptEditor({
           <select
             id={`category-${receipt.id}`}
             className="field"
+            disabled={Boolean(receipt.event_id)}
+            title={receipt.event_id ? "On a trip: it counts under the trip's category" : undefined}
             value={category}
             onChange={(event) => {
               const next = event.target.value as Category;
@@ -220,6 +234,13 @@ function ReceiptEditor({
           />
         </div>
       </div>
+
+      <ReceiptTripControl
+        receiptId={receipt.id}
+        eventId={receipt.event_id}
+        trips={trips}
+        onMoved={onClose}
+      />
 
       <LineItemEditor
         items={items}

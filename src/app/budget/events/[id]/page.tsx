@@ -9,7 +9,13 @@ import { SpendBar } from "@/components/events/SpendBar";
 import { TransfersSection } from "@/components/events/TransfersSection";
 import { todayInSouthAfrica } from "@/lib/period";
 import { formatDateRange } from "@/lib/dates";
-import { EventsNotSetUpError, getEvent } from "@/lib/events-data";
+import {
+  EventsNotSetUpError,
+  getEvent,
+  listMovableReceipts,
+  movableRange,
+} from "@/lib/events-data";
+import { MoveReceiptsPicker } from "@/components/events/MoveReceiptsPicker";
 import { formatRand, sum } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,6 +39,11 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
     throw error;
   }
   if (!event) notFound();
+
+  const today = todayInSouthAfrica();
+  const movable = await listMovableReceipts(supabase, user.id, event, today);
+  const range = movableRange(event, today);
+  const rangeLabel = formatDateRange(range.from, range.to) ?? "recent weeks";
 
   const { summary } = event;
   const me = summary.people.find((p) => p.participant.is_me);
@@ -181,7 +192,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         eventId={event.id}
         participants={event.participants}
         transfers={event.transfers}
-        today={todayInSouthAfrica()}
+        today={today}
         category={event.category}
       />
 
@@ -189,6 +200,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         <h2 className="font-semibold">
           Receipts <span className="font-normal text-ink-muted">({event.receipts.length})</span>
         </h2>
+        <MoveReceiptsPicker eventId={event.id} receipts={movable} rangeLabel={rangeLabel} />
         {event.receipts.length === 0 ? (
           <p className="card p-4 text-sm text-ink-secondary">
             No receipts yet. Tap <span className="font-medium">Add receipts</span> to scan or type

@@ -210,7 +210,7 @@ export async function getMonthSnapshot(
     supabase
       .from("receipts")
       .select(
-        "id, month_id, store_name, date, total, category, image_path, note, created_at," +
+        "id, month_id, store_name, date, total, category, image_path, note, created_at, event_id," +
           " line_items (id, receipt_id, item_name, amount, quantity, category, position)",
       )
       .eq("month_id", month.id)
