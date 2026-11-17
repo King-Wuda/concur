@@ -4,9 +4,16 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { saveReceipt, type SaveReceiptInput } from "@/app/budget/actions";
-import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
+import {
+  LineItemEditor,
+  linesPayload,
+  linesTotal,
+  type DraftLineItem,
+} from "@/components/LineItemEditor";
+import { useTrip, type Trip } from "@/components/TripContext";
 import { CATEGORIES, type Category } from "@/lib/categories";
-import { formatRand, parseRand, round2, sum } from "@/lib/money";
+import { EVENT_CATEGORIES, guessEventCategory, isEventCategory } from "@/lib/events";
+import { formatRand, parseRand } from "@/lib/money";
 import { useMonthStarts } from "@/components/BudgetCalendar";
 import { formatMonthLong, isIsoDate, type MonthKey } from "@/lib/month";
 import { budgetMonthFor, defaultDateIn, type MonthStart } from "@/lib/period";
@@ -32,6 +39,9 @@ export type ExpenseValues = {
   category: Category;
   note: string;
   items: DraftLineItem[];
+  /** On a trip: the participant who paid ("" for you) and the trip category ("" to guess). */
+  paidBy?: string;
+  eventCategory?: string;
 };
 
 export function emptyExpense(
@@ -61,27 +71,47 @@ export function filingMonth(
   return isIsoDate(values.date) ? budgetMonthFor(values.date, starts) : fallback;
 }
 
+/**
+ * What the expense comes to: the sum of its lines when it has any - the total
+ * is locked to them - otherwise the total typed in.
+ */
+/**
+ * Where a receipt will be saved, in words: its budget month, or for a trip,
+ * the trip - and the month too only when you paid.
+ */
+export function savingTo(values: ExpenseValues, month: MonthKey, trip: Trip | null): string {
+  if (!trip) return formatMonthLong(month);
+  const payer = trip.participants.find((p) => p.id === values.paidBy);
+  return payer && !payer.is_me
+    ? `${trip.name} only (${payer.name} paid)`
+    : `${trip.name} and ${formatMonthLong(month)}`;
+}
+
+export function expenseTotal(values: Pick<ExpenseValues, "total" | "items">): number {
+  return values.items.length > 0 ? linesTotal(values.items) : parseRand(values.total);
+}
+
 /** Turns what is on screen into what the save action takes. */
 export function expensePayload(
   values: ExpenseValues,
-  extras: { imagePath?: string | null; rawExtraction?: unknown } = {},
+  extras: { imagePath?: string | null; rawExtraction?: unknown; trip?: Trip | null } = {},
 ): SaveReceiptInput {
   return {
     store_name: values.storeName.trim() || "Unknown store",
     date: values.date,
-    total: parseRand(values.total),
+    total: expenseTotal(values),
     category: values.category,
     note: values.note.trim() || null,
     image_path: extras.imagePath ?? null,
     raw_extraction: extras.rawExtraction ?? null,
-    line_items: values.items
-      .filter((item) => item.item_name.trim().length > 0)
-      .map((item) => ({
-        item_name: item.item_name.trim(),
-        amount: parseRand(item.amount),
-        quantity: item.quantity.trim() ? parseRand(item.quantity) : null,
-        category: item.category,
-      })),
+    line_items: linesPayload(values.items),
+    trip: extras.trip
+      ? {
+          event_id: extras.trip.id,
+          paid_by: values.paidBy || null,
+          event_category: isEventCategory(values.eventCategory) ? values.eventCategory : null,
+        }
+      : null,
   };
 }
 
@@ -104,8 +134,8 @@ export function ExpenseFields({
   const set = (patch: Partial<ExpenseValues>) => onChange({ ...values, ...patch });
   const id = (name: string) => `${idPrefix}${name}`;
 
-  const itemsTotal = sum(values.items.map((item) => parseRand(item.amount)));
-  const parsedTotal = parseRand(values.total);
+  const locked = values.items.length > 0;
+  const trip = useTrip();
 
   /** Re-categorising the expense re-homes items that still match the old one. */
   function changeCategory(next: Category) {
@@ -119,6 +149,62 @@ export function ExpenseFields({
 
   return (
     <div className="space-y-4">
+      {trip && (
+        <div className="card space-y-3 p-4" style={{ borderColor: "var(--accent)" }}>
+          <p className="text-sm font-medium">
+            On <span className="text-accent">{trip.name}</span>
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <label htmlFor={id("paid-by")} className="text-sm font-medium">
+                Paid by
+              </label>
+              <select
+                id={id("paid-by")}
+                className="field"
+                value={values.paidBy || trip.participants.find((p) => p.is_me)?.id || ""}
+                onChange={(event) => set({ paidBy: event.target.value })}
+              >
+                {trip.participants.map((person) => (
+                  <option key={person.id} value={person.id}>
+                    {person.is_me ? "You" : person.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor={id("trip-category")} className="text-sm font-medium">
+                Trip category
+              </label>
+              <select
+                id={id("trip-category")}
+                className="field"
+                value={
+                  isEventCategory(values.eventCategory)
+                    ? values.eventCategory
+                    : guessEventCategory(values.category)
+                }
+                onChange={(event) => set({ eventCategory: event.target.value })}
+              >
+                {EVENT_CATEGORIES.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-ink-muted">
+            {(() => {
+              const payer = trip.participants.find((p) => p.id === values.paidBy);
+              return payer && !payer.is_me
+                ? `Paid by ${payer.name}: counts on the trip only, not in your monthly budget.`
+                : "Paid by you: counts on the trip and in your monthly budget.";
+            })()}
+          </p>
+        </div>
+      )}
+
       <div className="card space-y-3 p-4">
         <div className="space-y-1.5">
           <label htmlFor={id("store")} className="text-sm font-medium">
@@ -150,13 +236,17 @@ export function ExpenseFields({
           <div className="space-y-1.5">
             <label htmlFor={id("total")} className="text-sm font-medium">
               Total paid
+              {locked && (
+                <span className="font-normal text-ink-muted"> (sum of the items)</span>
+              )}
             </label>
             <input
               id={id("total")}
-              className="field field-money"
+              className={`field field-money ${locked ? "bg-sunken" : ""}`}
               inputMode="decimal"
-              autoFocus={autoFocusTotal}
-              value={values.total}
+              autoFocus={autoFocusTotal && !locked}
+              readOnly={locked}
+              value={locked ? linesTotal(values.items).toFixed(2) : values.total}
               onChange={(event) => set({ total: event.target.value })}
               placeholder="0.00"
             />
@@ -199,8 +289,6 @@ export function ExpenseFields({
         items={values.items}
         onChange={(items) => set({ items })}
         fallbackCategory={values.category}
-        itemsTotal={itemsTotal}
-        difference={round2(parsedTotal - itemsTotal)}
       />
     </div>
   );
@@ -227,6 +315,7 @@ export function ExpenseForm({
   onSavedAndContinue: (savedName: string) => void;
 }) {
   const router = useRouter();
+  const trip = useTrip();
   const starts = useMonthStarts();
 
   const [values, setValues] = useState<ExpenseValues>(initial);
@@ -236,7 +325,7 @@ export function ExpenseForm({
   async function save(andAnother: boolean) {
     setError(null);
     setSaving(true);
-    const result = await saveReceipt(expensePayload(values));
+    const result = await saveReceipt(expensePayload(values, { trip }));
     setSaving(false);
 
     if (!result.ok) {
@@ -250,7 +339,7 @@ export function ExpenseForm({
       return;
     }
 
-    router.push(`/budget?m=${monthKey}`);
+    router.push(trip ? `/budget/events/${trip.id}` : `/budget?m=${monthKey}`);
     router.refresh();
   }
 
@@ -292,8 +381,8 @@ export function ExpenseForm({
       </div>
 
       <p className="text-xs text-ink-muted">
-        Saving to {formatMonthLong(filingMonth(values, monthKey, starts))} ·{" "}
-        {formatRand(parseRand(values.total))} total
+        Saving to {savingTo(values, filingMonth(values, monthKey, starts), trip)} ·{" "}
+        {formatRand(expenseTotal(values))} total
       </p>
     </div>
   );

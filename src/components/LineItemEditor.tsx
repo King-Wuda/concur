@@ -1,22 +1,28 @@
 "use client";
 
 import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
-import { formatRand } from "@/lib/money";
+import { formatRand, parseDecimal, parseRand, round2, sum } from "@/lib/money";
 
 /**
  * Editable list of a receipt's line items.
  *
- * Amounts stay as strings while being typed so a half-finished number is never
- * silently rewritten under the cursor; they are parsed once on save. Each item
- * can carry its own category, which is what makes a mixed ride-share and food
- * delivery screenshot land in the right places.
+ * Each line is a price and a quantity; its amount is the two multiplied, and
+ * the receipt's total is the sum of its lines - so adding a second item, or
+ * changing a quantity from 1 to 3, moves the total with it.
+ *
+ * Numbers stay as strings while being typed so a half-finished number is never
+ * silently rewritten under the cursor. Each item can carry its own category,
+ * which is what makes a mixed ride-share and food delivery screenshot land in
+ * the right places.
  */
 
 export type DraftLineItem = {
   /** Stable key for React; not persisted. */
   key: string;
   item_name: string;
-  amount: string;
+  /** Price of one, as typed. */
+  price: string;
+  /** How many, as typed; blank means one. */
   quantity: string;
   category: Category;
 };
@@ -25,32 +31,101 @@ export function newLineItem(category: Category): DraftLineItem {
   return {
     key: crypto.randomUUID(),
     item_name: "",
-    amount: "",
+    price: "",
     quantity: "",
     category,
   };
+}
+
+/** The quantity as a number: blank or nonsense counts as one. */
+export function quantityOf(item: Pick<DraftLineItem, "quantity">): number {
+  const qty = parseRand(item.quantity);
+  return qty > 0 ? qty : 1;
+}
+
+/** Price times quantity, to the cent. */
+export function lineTotal(item: Pick<DraftLineItem, "price" | "quantity">): number {
+  return round2(parseDecimal(item.price) * quantityOf(item));
+}
+
+/** What the receipt's total is whenever it has lines: their sum. */
+export function linesTotal(items: readonly DraftLineItem[]): number {
+  return sum(items.map(lineTotal));
+}
+
+/**
+ * A saved or scanned line (an amount for the whole line, and maybe a
+ * quantity) as a draft: the price of one is the amount over the quantity.
+ */
+export function draftLine(
+  line: { item_name: string; amount: number; quantity: number | null; category: Category },
+  key: string,
+): DraftLineItem {
+  const qty = line.quantity && line.quantity > 0 ? line.quantity : 1;
+  const price = Math.round((Number(line.amount) / qty) * 10000) / 10000;
+  return {
+    key,
+    item_name: line.item_name,
+    price: String(price),
+    quantity: qty === 1 ? "" : String(qty),
+    category: line.category,
+  };
+}
+
+/**
+ * Lines as the save actions take them. Empty-named lines are dropped. A
+ * quantity of one is stored as none, as it always has been.
+ */
+export function linesPayload(items: readonly DraftLineItem[]) {
+  return items
+    .filter((item) => item.item_name.trim().length > 0)
+    .map((item) => ({
+      item_name: item.item_name.trim(),
+      amount: lineTotal(item),
+      quantity: quantityOf(item) === 1 ? null : quantityOf(item),
+      category: item.category,
+    }));
+}
+
+/**
+ * When a receipt's lines do not add up to its printed total - VAT shown
+ * separately, rounding, a line the reader could not make out - the gap is
+ * added as a line of its own, so that a total locked to its lines still
+ * matches the slip.
+ */
+export function withBalancingLine(
+  items: DraftLineItem[],
+  total: number,
+  category: Category,
+): DraftLineItem[] {
+  if (items.length === 0) return items;
+  const gap = round2(total - linesTotal(items));
+  if (Math.abs(gap) < 0.005) return items;
+  return [
+    ...items,
+    {
+      ...newLineItem(category),
+      key: `balance-${items.length}`,
+      item_name: gap > 0 ? "Unlisted / VAT / rounding" : "Discount",
+      price: String(gap),
+    },
+  ];
 }
 
 export function LineItemEditor({
   items,
   onChange,
   fallbackCategory,
-  itemsTotal,
-  difference,
 }: {
   items: DraftLineItem[];
   onChange: (items: DraftLineItem[]) => void;
   fallbackCategory: Category;
-  itemsTotal: number;
-  /** Receipt total minus the line items total. */
-  difference: number;
 }) {
+  const itemsTotal = linesTotal(items);
   const update = (key: string, patch: Partial<DraftLineItem>) =>
     onChange(items.map((item) => (item.key === key ? { ...item, ...patch } : item)));
 
   const remove = (key: string) => onChange(items.filter((item) => item.key !== key));
-
-  const balanced = Math.abs(difference) < 0.005;
 
   return (
     <section className="card p-4">
@@ -73,16 +148,14 @@ export function LineItemEditor({
 
       {items.length === 0 ? (
         <p className="py-2 text-sm text-ink-muted">
-          No individual items — the receipt total alone will be recorded.
+          No individual items — type the total above. Add items and the total
+          becomes their sum.
         </p>
       ) : (
         <ul className="space-y-2">
           {items.map((item) => (
-            <li
-              key={item.key}
-              className="grid grid-cols-[minmax(0,1fr)_5.5rem_2.5rem] items-start gap-2"
-            >
-              <div className="space-y-2">
+            <li key={item.key} className="space-y-2 rounded-lg bg-sunken p-2.5">
+              <div className="flex items-start gap-2">
                 <input
                   className="field"
                   value={item.item_name}
@@ -90,90 +163,70 @@ export function LineItemEditor({
                   placeholder="Item"
                   onChange={(event) => update(item.key, { item_name: event.target.value })}
                 />
-                <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn !min-h-11 !w-10 shrink-0 !p-0"
+                  aria-label={`Remove ${item.item_name || "this item"}`}
+                  onClick={() => remove(item.key)}
+                >
+                  <TrashIcon />
+                </button>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_4.5rem_minmax(0,1fr)] items-center gap-2">
+                <input
+                  className="field field-money"
+                  inputMode="decimal"
+                  aria-label={`Price of one ${item.item_name || "item"}`}
+                  placeholder="Price"
+                  value={item.price}
+                  onChange={(event) => update(item.key, { price: event.target.value })}
+                />
+                <div className="relative">
                   <span
                     aria-hidden
-                    className="size-2.5 shrink-0 rounded-sm"
-                    style={{ background: CATEGORY_COLOR_VAR[item.category] }}
-                  />
-                  <select
-                    className="field !py-1.5 !text-sm"
-                    value={item.category}
-                    aria-label={`Category for ${item.item_name || "this item"}`}
-                    onChange={(event) =>
-                      update(item.key, { category: event.target.value as Category })
-                    }
+                    className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center text-sm text-ink-muted"
                   >
-                    {CATEGORIES.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    ×
+                  </span>
                   <input
-                    className="field !w-20 !py-1.5 !text-sm field-money"
+                    className="field field-money !pl-6"
                     inputMode="decimal"
-                    aria-label={`Quantity for ${item.item_name || "this item"}`}
-                    placeholder="Qty"
+                    aria-label={`Quantity of ${item.item_name || "this item"}`}
+                    placeholder="1"
                     value={item.quantity}
                     onChange={(event) => update(item.key, { quantity: event.target.value })}
                   />
                 </div>
+                <span className="text-right text-sm font-medium tabular">
+                  = {formatRand(lineTotal(item))}
+                </span>
               </div>
-
-              <input
-                className="field field-money"
-                inputMode="decimal"
-                aria-label={`Amount for ${item.item_name || "this item"}`}
-                placeholder="0.00"
-                value={item.amount}
-                onChange={(event) => update(item.key, { amount: event.target.value })}
-              />
-
-              <button
-                type="button"
-                className="btn !min-h-11 !w-10 !p-0"
-                aria-label={`Remove ${item.item_name || "this item"}`}
-                onClick={() => remove(item.key)}
-              >
-                <TrashIcon />
-              </button>
+              <div className="flex items-center gap-2">
+                <span
+                  aria-hidden
+                  className="size-2.5 shrink-0 rounded-sm"
+                  style={{ background: CATEGORY_COLOR_VAR[item.category] }}
+                />
+                <select
+                  className="field !py-1.5 !text-sm"
+                  value={item.category}
+                  aria-label={`Category for ${item.item_name || "this item"}`}
+                  onChange={(event) =>
+                    update(item.key, { category: event.target.value as Category })
+                  }
+                >
+                  {CATEGORIES.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </li>
           ))}
         </ul>
       )}
 
-      {!balanced && items.length > 0 && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
-          <span style={{ color: "var(--ink-secondary)" }}>
-            The items are {formatRand(Math.abs(difference))}{" "}
-            {difference > 0 ? "short of" : "over"} the total.
-          </span>
-          <button
-            type="button"
-            className="btn !min-h-9 !px-3 !py-1.5 !text-sm"
-            onClick={() =>
-              onChange([
-                ...items,
-                {
-                  ...newLineItem(fallbackCategory),
-                  item_name: difference > 0 ? "Unlisted / VAT / rounding" : "Discount",
-                  amount: String(difference),
-                },
-              ])
-            }
-          >
-            Add the difference as a line
-          </button>
-        </div>
-      )}
-
-      {!balanced && items.length > 0 && (
-        <p className="mt-2 text-xs text-ink-muted">
-          It is fine to leave this unbalanced — the difference is counted under the
-          receipt&apos;s own category, so the month still adds up.
-        </p>
-      )}
     </section>
   );
 }

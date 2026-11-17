@@ -4,9 +4,16 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { deleteReceipt, signedReceiptUrl, updateReceipt } from "@/app/budget/actions";
-import { LineItemEditor, type DraftLineItem } from "@/components/LineItemEditor";
+import {
+  draftLine,
+  LineItemEditor,
+  linesPayload,
+  linesTotal,
+  withBalancingLine,
+  type DraftLineItem,
+} from "@/components/LineItemEditor";
 import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
-import { formatRand, parseRand, round2, sum } from "@/lib/money";
+import { formatRand, parseRand, round2 } from "@/lib/money";
 import type { ReceiptWithItems } from "@/lib/types";
 
 /**
@@ -65,22 +72,25 @@ function ReceiptEditor({
   const [total, setTotal] = useState(String(round2(Number(receipt.total) || 0)));
   const [category, setCategory] = useState<Category>(receipt.category);
   const [note, setNote] = useState(receipt.note ?? "");
+  // The total follows the lines, so a receipt saved before that rule whose
+  // lines fall short of its total opens with the gap as a line of its own -
+  // saving it then keeps the total it always had.
   const [items, setItems] = useState<DraftLineItem[]>(() =>
-    receipt.line_items.map((item) => ({
-      key: item.id,
-      item_name: item.item_name,
-      amount: String(round2(Number(item.amount) || 0)),
-      quantity: item.quantity === null ? "" : String(item.quantity),
-      category: item.category,
-    })),
+    withBalancingLine(
+      receipt.line_items.map((item) =>
+        draftLine({ ...item, amount: Number(item.amount) || 0 }, item.id),
+      ),
+      Number(receipt.total) || 0,
+      receipt.category,
+    ),
   );
 
   const [busy, setBusy] = useState<"save" | "delete" | "image" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const itemsTotal = sum(items.map((item) => parseRand(item.amount)));
-  const parsedTotal = parseRand(total);
+  const locked = items.length > 0;
+  const parsedTotal = locked ? linesTotal(items) : parseRand(total);
 
   async function save() {
     setBusy("save");
@@ -93,14 +103,7 @@ function ReceiptEditor({
       total: parsedTotal,
       category,
       note: note.trim() || null,
-      line_items: items
-        .filter((item) => item.item_name.trim().length > 0)
-        .map((item) => ({
-          item_name: item.item_name.trim(),
-          amount: parseRand(item.amount),
-          quantity: item.quantity.trim() ? parseRand(item.quantity) : null,
-          category: item.category,
-        })),
+      line_items: linesPayload(items),
     });
 
     setBusy(null);
@@ -169,12 +172,14 @@ function ReceiptEditor({
         <div className="space-y-1.5">
           <label htmlFor={`total-${receipt.id}`} className="text-sm font-medium">
             Total paid
+            {locked && <span className="font-normal text-ink-muted"> (sum of the items)</span>}
           </label>
           <input
             id={`total-${receipt.id}`}
-            className="field field-money"
+            className={`field field-money ${locked ? "bg-sunken" : ""}`}
             inputMode="decimal"
-            value={total}
+            readOnly={locked}
+            value={locked ? parsedTotal.toFixed(2) : total}
             onChange={(event) => setTotal(event.target.value)}
           />
         </div>
@@ -222,8 +227,6 @@ function ReceiptEditor({
         items={items}
         onChange={setItems}
         fallbackCategory={category}
-        itemsTotal={itemsTotal}
-        difference={round2(parsedTotal - itemsTotal)}
       />
 
       {error && (

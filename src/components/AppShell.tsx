@@ -32,6 +32,7 @@ const SECTIONS: { id: string; label: string; href: string; tabs: Tab[] }[] = [
       { href: "/budget", label: "Dashboard", icon: ChartIcon },
       { href: "/budget/add", label: "Add", icon: CameraIcon },
       { href: "/budget/receipts", label: "Receipts", icon: ReceiptIcon },
+      { href: "/budget/events", label: "Trips", icon: SuitcaseIcon },
       { href: "/budget/plan", label: "Plan", icon: SlidersIcon },
     ],
   },
@@ -318,6 +319,15 @@ function DumbbellIcon() {
   return (
     <svg {...iconProps}>
       <path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11" />
+    </svg>
+  );
+}
+
+function SuitcaseIcon() {
+  return (
+    <svg {...iconProps}>
+      <rect x="3.5" y="7.5" width="17" height="12" rx="2" />
+      <path d="M9 7.5V5.5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5.5v2M3.5 12.5h17" />
     </svg>
   );
 }

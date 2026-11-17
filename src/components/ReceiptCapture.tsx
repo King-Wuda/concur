@@ -8,12 +8,16 @@ import {
   ExpenseFields,
   emptyExpense,
   expensePayload,
+  expenseTotal,
+  savingTo,
   filingMonth,
   type ExpenseValues,
 } from "@/components/ExpenseForm";
+import { draftLine, withBalancingLine } from "@/components/LineItemEditor";
 import { CATEGORY_COLOR_VAR } from "@/lib/categories";
-import { formatRand, parseRand, sum } from "@/lib/money";
+import { formatRand, sum } from "@/lib/money";
 import { useMonthStarts } from "@/components/BudgetCalendar";
+import { useTrip } from "@/components/TripContext";
 import { formatMonthLong, type MonthKey } from "@/lib/month";
 import { defaultDateIn, type MonthStart } from "@/lib/period";
 import { createClient } from "@/lib/supabase/client";
@@ -71,6 +75,7 @@ export function ReceiptCapture({
 }) {
   const router = useRouter();
   const starts = useMonthStarts();
+  const trip = useTrip();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // The original File for each entry, so a failed one can be retried.
@@ -94,7 +99,7 @@ export function ReceiptCapture({
 
   const inFlight = entries.some((e) => e.status === "uploading" || e.status === "reading");
   const ready = entries.filter((e) => e.status === "ready");
-  const readyTotal = sum(ready.map((e) => parseRand(e.values.total)));
+  const readyTotal = sum(ready.map((e) => expenseTotal(e.values)));
   const room = MAX_BATCH - entries.filter((e) => e.status !== "saved").length;
 
   function clearInputs() {
@@ -242,7 +247,7 @@ export function ReceiptCapture({
     if (pending.length === 0) return;
 
     // Catch the one that would save as "Unknown store, R0.00" before any are saved.
-    const blank = pending.find((e) => parseRand(e.values.total) === 0);
+    const blank = pending.find((e) => expenseTotal(e.values) === 0);
     if (blank) {
       setOpenKey(blank.key);
       update(blank.key, { error: "Enter the total paid before saving." });
@@ -259,6 +264,7 @@ export function ReceiptCapture({
       update(entry.key, { status: "saving", error: null });
       const result = await saveReceipt(
         expensePayload(entry.values, {
+          trip,
           imagePath: entry.imagePath,
           rawExtraction: entry.extraction,
         }),
@@ -267,7 +273,7 @@ export function ReceiptCapture({
         update(entry.key, { status: "saved" });
         done.push({
           name: entry.values.storeName.trim() || "Unknown store",
-          total: parseRand(entry.values.total),
+          total: expenseTotal(entry.values),
           month: filingMonth(entry.values, monthKey, starts),
         });
       } else {
@@ -328,7 +334,7 @@ export function ReceiptCapture({
               {saved.length === 1 ? "Expense saved" : `${saved.length} expenses saved`}
             </h2>
             <p className="text-sm text-ink-secondary">
-              {formatRand(total)} added to {monthsText}.
+              {formatRand(total)} added to {trip ? trip.name : monthsText}.
             </p>
           </div>
 
@@ -338,7 +344,7 @@ export function ReceiptCapture({
                 <li key={index} className="flex justify-between gap-3 py-1.5">
                   <span className="truncate">
                     {s.name}
-                    {months.length > 1 && (
+                    {!trip && months.length > 1 && (
                       <span className="text-ink-muted"> · {formatMonthLong(s.month)}</span>
                     )}
                   </span>
@@ -374,9 +380,11 @@ export function ReceiptCapture({
             <button
               type="button"
               className="btn"
-              onClick={() => router.push(`/budget?m=${monthKey}`)}
+              onClick={() =>
+                router.push(trip ? `/budget/events/${trip.id}` : `/budget?m=${monthKey}`)
+              }
             >
-              No, go to dashboard
+              {trip ? `No, back to ${trip.name}` : "No, go to dashboard"}
             </button>
           </div>
         </div>
@@ -602,7 +610,9 @@ function EntryCard({
 }) {
   const { status, values, extraction } = entry;
   const lands = filingMonth(values, monthKey, useMonthStarts());
-  const otherMonth = status !== "uploading" && status !== "reading" && lands !== monthKey;
+  const trip = useTrip();
+  const otherMonth =
+    !trip && status !== "uploading" && status !== "reading" && lands !== monthKey;
   const busy = status === "uploading" || status === "reading" || status === "saving";
   const editable = status === "ready" && !locked;
   const needsLook =
@@ -681,7 +691,7 @@ function EntryCard({
         </span>
 
         {(status === "ready" || status === "saving" || status === "saved") && (
-          <span className="tabular font-semibold">{formatRand(parseRand(values.total))}</span>
+          <span className="tabular font-semibold">{formatRand(expenseTotal(values))}</span>
         )}
         {busy && <Spinner />}
         {editable && <Chevron open={open} />}
@@ -775,7 +785,7 @@ function EntryCard({
             </button>
           </div>
           <p className="text-xs text-ink-muted">
-            Will be saved to {formatMonthLong(lands)}, the pay period its date falls in.
+            Will be saved to {savingTo(values, lands, trip)}.
           </p>
         </div>
       )}
@@ -877,13 +887,13 @@ function toDraft(
     total: receipt.total ? String(receipt.total) : "",
     category: receipt.category,
     note: "",
-    items: receipt.line_items.map((item, index) => ({
-      key: `${index}-${item.item_name}`,
-      item_name: item.item_name,
-      amount: String(item.amount),
-      quantity: item.quantity === null ? "" : String(item.quantity),
-      category: item.category,
-    })),
+    // The total is the sum of the lines, so any gap between what was read
+    // off the lines and the printed total becomes a line of its own.
+    items: withBalancingLine(
+      receipt.line_items.map((item, index) => draftLine(item, `${index}-${item.item_name}`)),
+      receipt.total ?? 0,
+      receipt.category,
+    ),
   };
 }
 

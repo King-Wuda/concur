@@ -121,3 +121,12 @@ begin
   end if;
   raise notice 'PASS  existing habits and goals are untouched by the new columns';
 end $$;
+
+-- The events migration leaves every existing receipt in its month.
+do $$
+begin
+  if exists (select 1 from public.receipts where month_id is null or event_id is not null) then
+    raise exception 'an existing receipt lost its month or gained an event';
+  end if;
+  raise notice 'PASS  existing receipts keep their month';
+end $$;

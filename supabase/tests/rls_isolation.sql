@@ -128,6 +128,32 @@ values (
 insert into public.body_logs (user_id, date, weight_kg, steps)
 values ('11111111-1111-1111-1111-111111111111', '2026-11-01', 82.4, 9500);
 
+insert into public.events (id, user_id, name, budget)
+values (
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  '11111111-1111-1111-1111-111111111111',
+  'Cape Town trip', 8000
+);
+
+insert into public.event_participants (id, user_id, event_id, name, is_me)
+values
+  ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', '11111111-1111-1111-1111-111111111111',
+   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'You', true),
+  ('cccccccc-cccc-cccc-cccc-cccccccccccc', '11111111-1111-1111-1111-111111111111',
+   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Thabo', false);
+
+insert into public.event_budgets (user_id, event_id, category, amount)
+values ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Food', 2000);
+
+-- Paid by someone else: on the event only, in no budget month.
+insert into public.receipts
+  (user_id, month_id, event_id, paid_by, event_category, store_name, date, total, category)
+values (
+  '11111111-1111-1111-1111-111111111111', null,
+  'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
+  'Accommodation', 'Airbnb', '2026-12-20', 3600, 'Miscellaneous'
+);
+
 insert into public.user_settings (user_id, step_goal)
 values ('11111111-1111-1111-1111-111111111111', 10000);
 
@@ -145,7 +171,7 @@ begin
   if (select count(*) from public.months) <> 1 then
     raise exception 'owner cannot see their own month';
   end if;
-  if (select count(*) from public.receipts) <> 1 then
+  if (select count(*) from public.receipts) <> 2 then
     raise exception 'owner cannot see their own receipt';
   end if;
   if (select count(*) from public.line_items) <> 1 then
@@ -172,7 +198,10 @@ begin
      or (select count(*) from public.habit_checks) <> 1
      or (select count(*) from public.body_logs) <> 1
      or (select count(*) from public.quotes) <> 1
-     or (select count(*) from public.user_settings) <> 1 then
+     or (select count(*) from public.user_settings) <> 1
+     or (select count(*) from public.events) <> 1
+     or (select count(*) from public.event_participants) <> 2
+     or (select count(*) from public.event_budgets) <> 1 then
     raise exception 'owner cannot see their own goals, routine or body log';
   end if;
   raise notice 'PASS  owner sees their own rows';
@@ -192,7 +221,7 @@ begin
     'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
     'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets',
     'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes',
-    'user_settings'
+    'user_settings', 'events', 'event_budgets', 'event_participants'
   ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
@@ -339,7 +368,7 @@ begin
     raise exception 'owner could not update their own receipt';
   end if;
 
-  if (select count(*) from public.receipts) <> 2 then
+  if (select count(*) from public.receipts) <> 3 then
     raise exception 'owner cannot see the receipt they just wrote';
   end if;
 
@@ -388,6 +417,24 @@ begin
   end;
 
   raise notice 'PASS  habit schedules and ticks are validated';
+
+  begin
+    insert into public.receipts (user_id, month_id, event_id, store_name, date, total, category)
+    values ('11111111-1111-1111-1111-111111111111', null, null, 'Nowhere', '2026-12-01', 5, 'Miscellaneous');
+    raise exception 'a receipt in neither a month nor an event was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  begin
+    insert into public.event_participants (user_id, event_id, name, is_me)
+    values ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Me again', true);
+    raise exception 'an event got two of you';
+  exception
+    when unique_violation then null;
+  end;
+
+  raise notice 'PASS  every receipt belongs somewhere, and each event has one of you';
 end $$;
 
 -- --------------------------------------------------------------------------

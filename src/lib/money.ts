@@ -55,7 +55,15 @@ export function sum(amounts: readonly number[]): number {
  * Returns 0 for anything unparseable so a stray keystroke can't poison a total.
  */
 export function parseRand(input: unknown): number {
-  if (typeof input === "number") return round2(input);
+  return round2(parseDecimal(input));
+}
+
+/**
+ * The same, without rounding to the cent: for a price of one that is a third
+ * of a line's amount, where rounding first would lose a cent on the line.
+ */
+export function parseDecimal(input: unknown): number {
+  if (typeof input === "number") return Number.isFinite(input) ? input : 0;
   if (typeof input !== "string") return 0;
 
   let text = input.trim().replace(/[Rr\s\u00a0]/g, "");
@@ -73,7 +81,7 @@ export function parseRand(input: unknown): number {
   }
 
   const value = Number.parseFloat(text);
-  return Number.isFinite(value) ? round2(value) : 0;
+  return Number.isFinite(value) ? value : 0;
 }
 
 /** Percentage of `total`, clamped to 0 when there is nothing to divide by. */

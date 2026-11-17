@@ -54,6 +54,18 @@ page (`src/app/page.tsx`) and an entry in `SECTIONS` in
 
 ### What it does
 
+- **Trips & events.** An expense report per occasion, under Budget → Trips:
+  dates, a total budget and optional budgets per category (Accommodation,
+  Transport, Food, Activities, Other), and the people going. Receipts are
+  scanned or typed onto the trip with who paid. What you paid also counts in
+  your monthly budget; what others paid counts on the trip only. The report
+  shows spend against budget, how much you and each person covered, and a
+  settle-up that splits everything equally - who pays whom, to the cent.
+- **Line items add up.** Each line is a price times a quantity, and a
+  receipt's total is the sum of its lines, so 56 + 28 is R84 and changing a
+  quantity changes the total. A scanned slip whose lines fall short of its
+  printed total gets the gap as an "Unlisted / VAT / rounding" line.
+
 - **Two ways in.** Photograph a slip and have it read for you, or type the
   expense yourself — cash, a transfer, anything with no receipt worth keeping.
   Both routes end in the same confirmation form, so a typed expense and a
@@ -149,7 +161,8 @@ payday (`months.period_start`, null meaning the usual 24th), and
 `0006_workouts.sql` adds the workout plan and logged sessions, and
 `0007_goals_routine_body.sql` adds goals, milestones, the routine, the body
 log and quotes; `0008_routine_times.sql` adds habit times and categories, goal
-categories and start dates, and the step goal.
+categories and start dates, and the step goal; `0009_events.sql` adds trips
+and events.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

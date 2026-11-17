@@ -8,6 +8,7 @@ import { budgetMonthOf, ensureMonth, listMonths } from "@/lib/data";
 import { round2 } from "@/lib/money";
 import { isIsoDate, isMonthKey, monthKeyToDate, shiftMonth } from "@/lib/month";
 import { budgetMonthFor, paydayProblem } from "@/lib/period";
+import { EVENT_CATEGORIES, guessEventCategory } from "@/lib/events";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -35,11 +36,27 @@ async function session() {
 }
 
 function failure(error: unknown): { ok: false; error: string } {
-  const message = error instanceof Error ? error.message : "Something went wrong.";
+  const code =
+    typeof error === "object" && error && "code" in error
+      ? (error as { code?: string }).code
+      : undefined;
+  if (code === "42703" || code === "PGRST204" || code === "42P01" || code === "PGRST205") {
+    return {
+      ok: false,
+      error: "Run supabase/migrations/0009_events.sql in the Supabase SQL editor first.",
+    };
+  }
+  const message =
+    error instanceof Error
+      ? error.message
+      : typeof error === "object" && error && "message" in error
+        ? String((error as { message: unknown }).message)
+        : "Something went wrong.";
   return { ok: false, error: message };
 }
 
 function revalidateMonth() {
+  revalidatePath("/budget/events", "layout");
   revalidatePath("/");
   revalidatePath("/budget", "layout");
 }
@@ -64,6 +81,16 @@ const SaveReceiptInput = z.object({
   image_path: z.string().trim().max(400).nullable().optional(),
   raw_extraction: z.unknown().optional(),
   line_items: z.array(LineItemInput).max(300),
+  /** For a receipt on a trip or event. */
+  trip: z
+    .object({
+      event_id: z.string().uuid(),
+      /** The participant who paid; omitted means you. */
+      paid_by: z.string().uuid().nullable().optional(),
+      event_category: z.enum(EVENT_CATEGORIES).nullable().optional(),
+    })
+    .nullable()
+    .optional(),
 });
 
 export type SaveReceiptInput = z.input<typeof SaveReceiptInput>;
@@ -75,20 +102,30 @@ export async function saveReceipt(
   try {
     const input = SaveReceiptInput.parse(raw);
     const { supabase, userId } = await session();
+    const trip = input.trip
+      ? await resolveTrip(supabase, userId, input.trip.event_id, input.trip.paid_by ?? null)
+      : null;
     // An expense belongs to the pay period it happened in, whichever month
     // happened to be on screen when it was saved: anything from payday on the
     // 24th of September onwards comes out of October's budget (lib/period).
-    const month = await ensureMonth(
-      supabase,
-      userId,
-      await budgetMonthOf(supabase, userId, input.date),
-    );
+    // Someone else's trip receipt is in no month: it is not your spending.
+    const month =
+      trip && !trip.mine
+        ? null
+        : await ensureMonth(supabase, userId, await budgetMonthOf(supabase, userId, input.date));
 
     const inserted = await supabase
       .from("receipts")
       .insert({
         user_id: userId,
-        month_id: month.id,
+        month_id: month?.id ?? null,
+        ...(trip
+          ? {
+              event_id: trip.eventId,
+              paid_by: trip.paidBy,
+              event_category: input.trip?.event_category ?? guessEventCategory(input.category),
+            }
+          : {}),
         store_name: input.store_name,
         date: input.date,
         total: round2(input.total),
@@ -148,8 +185,9 @@ export async function updateReceipt(raw: UpdateReceiptInput): Promise<ActionResu
     if (Object.keys(fields).length > 0) {
       const patch = { ...fields } as Record<string, unknown>;
       if (typeof fields.total === "number") patch.total = round2(fields.total);
-      if (fields.date) {
-        // Correcting a date can move the expense into another month.
+      if (fields.date && !(await isSomeoneElses(supabase, userId, id))) {
+        // Correcting a date can move the expense into another month - unless
+        // someone else paid it, when it is in no month at all.
         const month = await ensureMonth(
           supabase,
           userId,
@@ -189,6 +227,105 @@ export async function updateReceipt(raw: UpdateReceiptInput): Promise<ActionResu
         if (items.error) throw items.error;
       }
     }
+
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Checks a receipt's trip and payer belong to you, and says whether the payer
+ * is you. With no payer named, it is you.
+ */
+async function resolveTrip(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  eventId: string,
+  paidBy: string | null,
+): Promise<{ eventId: string; paidBy: string; mine: boolean }> {
+  const people = await supabase
+    .from("event_participants")
+    .select("id, is_me")
+    .eq("event_id", eventId)
+    .eq("user_id", userId);
+  if (people.error) throw people.error;
+  const rows = (people.data ?? []) as { id: string; is_me: boolean }[];
+  const payer = paidBy ? rows.find((p) => p.id === paidBy) : rows.find((p) => p.is_me);
+  if (!payer) throw new Error("That trip or person was not found.");
+  return { eventId, paidBy: payer.id, mine: payer.is_me };
+}
+
+/** Whether a receipt sits on a trip, paid by someone other than you. */
+async function isSomeoneElses(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  receiptId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("receipts")
+    .select("month_id")
+    .eq("id", receiptId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data !== null && data.month_id === null;
+}
+
+const TripAssignment = z.object({
+  receiptId: z.string().uuid(),
+  /** Null takes the receipt off its trip. */
+  eventId: z.string().uuid().nullable(),
+  paidBy: z.string().uuid().nullable().optional(),
+  eventCategory: z.enum(EVENT_CATEGORIES).nullable().optional(),
+});
+
+/**
+ * Puts a receipt on a trip (or takes it off), with who paid and its trip
+ * category. Who paid decides whether it counts in your monthly budget: yours
+ * does, in the pay period of its date; someone else's does not.
+ */
+export async function assignReceiptToTrip(
+  raw: z.input<typeof TripAssignment>,
+): Promise<ActionResult> {
+  try {
+    const input = TripAssignment.parse(raw);
+    const { supabase, userId } = await session();
+
+    const receipt = await supabase
+      .from("receipts")
+      .select("date, category")
+      .eq("id", input.receiptId)
+      .eq("user_id", userId)
+      .single();
+    if (receipt.error) throw receipt.error;
+
+    const trip = input.eventId
+      ? await resolveTrip(supabase, userId, input.eventId, input.paidBy ?? null)
+      : null;
+    const month =
+      trip && !trip.mine
+        ? null
+        : await ensureMonth(
+            supabase,
+            userId,
+            await budgetMonthOf(supabase, userId, receipt.data.date as string),
+          );
+
+    const { error } = await supabase
+      .from("receipts")
+      .update({
+        month_id: month?.id ?? null,
+        event_id: trip?.eventId ?? null,
+        paid_by: trip?.paidBy ?? null,
+        event_category: trip
+          ? (input.eventCategory ?? guessEventCategory(receipt.data.category as string))
+          : null,
+      })
+      .eq("id", input.receiptId)
+      .eq("user_id", userId);
+    if (error) throw error;
 
     revalidateMonth();
     return { ok: true };
