@@ -98,10 +98,17 @@ export function AddExpense({
                     value={into ?? ""}
                     onChange={(e) => setInto(e.target.value || null)}
                   >
-                    <option value="">The category the reader picks</option>
+                    <option value="">All categories</option>
                     <CategoryOptions current={into ?? undefined} />
                   </select>
                 </div>
+              )}
+              {!trip && (
+                <p className="mx-auto -mt-2 mb-4 max-w-lg text-xs text-ink-muted">
+                  {into
+                    ? `Every receipt in this batch goes into ${into}.`
+                    : "Each receipt goes into the category it looks like - check them before saving."}
+                </p>
               )}
               <ReceiptCapture monthKey={monthKey} userId={userId} intoCategory={into} />
             </div>
