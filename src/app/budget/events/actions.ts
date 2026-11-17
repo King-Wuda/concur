@@ -122,20 +122,29 @@ export async function createEvent(
     if (inserted.error) throw inserted.error;
     const eventId = inserted.data.id as string;
 
-    const people = await supabase.from("event_participants").insert([
-      { user_id: userId, event_id: eventId, name: "You", is_me: true, position: 0 },
-      ...others.map((name, index) => ({
-        user_id: userId,
-        event_id: eventId,
-        name,
-        position: index + 1,
-      })),
-    ]);
-    if (people.error) throw people.error;
+    try {
+      // Every row names every column: in a bulk insert a column one row
+      // leaves out is sent as null for it, not as the column's default.
+      const people = await supabase.from("event_participants").insert([
+        { user_id: userId, event_id: eventId, name: "You", is_me: true, position: 0 },
+        ...others.map((name, index) => ({
+          user_id: userId,
+          event_id: eventId,
+          name,
+          is_me: false,
+          position: index + 1,
+        })),
+      ]);
+      if (people.error) throw people.error;
 
-    await writeBudgets(supabase, userId, eventId, input.category_budgets);
-    // The trip's own category in your monthly budget, named after it.
-    await createCategory(supabase, userId, input.name, eventId);
+      await writeBudgets(supabase, userId, eventId, input.category_budgets);
+      // The trip's own category in your monthly budget, named after it.
+      await createCategory(supabase, userId, input.name, eventId);
+    } catch (error) {
+      // Leave no half-made trip behind.
+      await supabase.from("events").delete().eq("id", eventId).eq("user_id", userId);
+      throw error;
+    }
     revalidate();
     return { ok: true, data: { id: eventId } };
   } catch (error) {
