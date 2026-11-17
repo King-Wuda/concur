@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { saveReceipt } from "@/app/budget/actions";
 import {
@@ -14,7 +14,7 @@ import {
   type ExpenseValues,
 } from "@/components/ExpenseForm";
 import { draftLine, withBalancingLine } from "@/components/LineItemEditor";
-import { CATEGORY_COLOR_VAR } from "@/lib/categories";
+import { useCategoryColor } from "@/components/CategoriesContext";
 import { formatRand, sum } from "@/lib/money";
 import { useMonthStarts } from "@/components/BudgetCalendar";
 import { useTrip } from "@/components/TripContext";
@@ -69,14 +69,22 @@ const READ_CONCURRENTLY = 3;
 export function ReceiptCapture({
   monthKey,
   userId,
+  intoCategory = null,
 }: {
   monthKey: MonthKey;
   userId: string;
+  /** When set, every receipt read goes into this category instead of the reader's choice. */
+  intoCategory?: string | null;
 }) {
   const router = useRouter();
   const starts = useMonthStarts();
   const trip = useTrip();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Read when each receipt comes back, which may be after the choice changed.
+  const intoRef = useRef(intoCategory);
+  useEffect(() => {
+    intoRef.current = intoCategory;
+  }, [intoCategory]);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   // The original File for each entry, so a failed one can be retried.
   const filesRef = useRef(new Map<string, File>());
@@ -227,7 +235,7 @@ export function ReceiptCapture({
       update(key, {
         status: "ready",
         extraction: payload.receipt,
-        values: toDraft(payload.receipt, monthKey, starts),
+        values: inCategory(toDraft(payload.receipt, monthKey, starts), intoRef.current),
         dateMissing: payload.receipt.date === null,
       });
     } catch (cause) {
@@ -610,6 +618,7 @@ function EntryCard({
 }) {
   const { status, values, extraction } = entry;
   const lands = filingMonth(values, monthKey, useMonthStarts());
+  const colorFor = useCategoryColor();
   const trip = useTrip();
   const otherMonth =
     !trip && status !== "uploading" && status !== "reading" && lands !== monthKey;
@@ -656,7 +665,7 @@ function EntryCard({
               <span
                 aria-hidden
                 className="size-2 shrink-0 rounded-sm"
-                style={{ background: CATEGORY_COLOR_VAR[values.category] }}
+                style={{ background: colorFor(values.category) }}
               />
             )}
             <span className="truncate font-medium">
@@ -872,6 +881,16 @@ function CheckIcon() {
 }
 
 /* -------------------------------------------------------------------------- */
+
+/** A draft with it and all its lines moved into `category`, if one is given. */
+function inCategory(values: ExpenseValues, category: string | null): ExpenseValues {
+  if (!category) return values;
+  return {
+    ...values,
+    category,
+    items: values.items.map((item) => ({ ...item, category })),
+  };
+}
 
 function toDraft(
   receipt: ExtractedReceipt,

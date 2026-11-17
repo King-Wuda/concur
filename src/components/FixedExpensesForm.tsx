@@ -5,7 +5,8 @@ import { useState } from "react";
 
 import { saveFixedExpenses } from "@/app/budget/actions";
 import { SaveBar } from "@/components/SaveBar";
-import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
+import { CategoryOptions, useCategoryColor } from "@/components/CategoriesContext";
+import type { Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";
 import type { MonthKey } from "@/lib/month";
 import type { FixedExpenseRow } from "@/lib/types";
@@ -31,6 +32,7 @@ export function FixedExpensesForm({
   monthKey: MonthKey;
   items: FixedExpenseRow[];
 }) {
+  const colorFor = useCategoryColor();
   const router = useRouter();
 
   const [rows, setRows] = useState<DraftFixed[]>(() =>
@@ -109,7 +111,7 @@ export function FixedExpensesForm({
                 <span
                   aria-hidden
                   className="size-2.5 shrink-0 rounded-sm"
-                  style={{ background: CATEGORY_COLOR_VAR[row.category] }}
+                  style={{ background: colorFor(row.category) }}
                 />
                 <select
                   className="field !py-1.5 !text-sm"
@@ -119,11 +121,7 @@ export function FixedExpensesForm({
                     update(row.key, { category: event.target.value as Category })
                   }
                 >
-                  {CATEGORIES.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
+                  <CategoryOptions current={row.category} />
                 </select>
                 <label className="flex shrink-0 items-center gap-1.5 text-xs text-ink-secondary">
                   <input

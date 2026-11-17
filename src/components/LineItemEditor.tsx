@@ -1,6 +1,11 @@
 "use client";
 
-import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
+import {
+  CategoryOptions,
+  useCategoryColor,
+} from "@/components/CategoriesContext";
+import { useTrip } from "@/components/TripContext";
+import type { Category } from "@/lib/categories";
 import { formatRand, parseDecimal, parseRand, round2, sum } from "@/lib/money";
 
 /**
@@ -44,7 +49,9 @@ export function quantityOf(item: Pick<DraftLineItem, "quantity">): number {
 }
 
 /** Price times quantity, to the cent. */
-export function lineTotal(item: Pick<DraftLineItem, "price" | "quantity">): number {
+export function lineTotal(
+  item: Pick<DraftLineItem, "price" | "quantity">,
+): number {
   return round2(parseDecimal(item.price) * quantityOf(item));
 }
 
@@ -58,7 +65,12 @@ export function linesTotal(items: readonly DraftLineItem[]): number {
  * quantity) as a draft: the price of one is the amount over the quantity.
  */
 export function draftLine(
-  line: { item_name: string; amount: number; quantity: number | null; category: Category },
+  line: {
+    item_name: string;
+    amount: number;
+    quantity: number | null;
+    category: Category;
+  },
   key: string,
 ): DraftLineItem {
   const qty = line.quantity && line.quantity > 0 ? line.quantity : 1;
@@ -122,10 +134,17 @@ export function LineItemEditor({
   fallbackCategory: Category;
 }) {
   const itemsTotal = linesTotal(items);
+  const colorFor = useCategoryColor();
+  // On a trip every line counts under the trip's category, so there is no
+  // category to pick per line.
+  const trip = useTrip();
   const update = (key: string, patch: Partial<DraftLineItem>) =>
-    onChange(items.map((item) => (item.key === key ? { ...item, ...patch } : item)));
+    onChange(
+      items.map((item) => (item.key === key ? { ...item, ...patch } : item)),
+    );
 
-  const remove = (key: string) => onChange(items.filter((item) => item.key !== key));
+  const remove = (key: string) =>
+    onChange(items.filter((item) => item.key !== key));
 
   return (
     <section className="card p-4">
@@ -161,7 +180,9 @@ export function LineItemEditor({
                   value={item.item_name}
                   aria-label="Item name"
                   placeholder="Item"
-                  onChange={(event) => update(item.key, { item_name: event.target.value })}
+                  onChange={(event) =>
+                    update(item.key, { item_name: event.target.value })
+                  }
                 />
                 <button
                   type="button"
@@ -179,7 +200,9 @@ export function LineItemEditor({
                   aria-label={`Price of one ${item.item_name || "item"}`}
                   placeholder="Price"
                   value={item.price}
-                  onChange={(event) => update(item.key, { price: event.target.value })}
+                  onChange={(event) =>
+                    update(item.key, { price: event.target.value })
+                  }
                 />
                 <div className="relative">
                   <span
@@ -194,39 +217,40 @@ export function LineItemEditor({
                     aria-label={`Quantity of ${item.item_name || "this item"}`}
                     placeholder="1"
                     value={item.quantity}
-                    onChange={(event) => update(item.key, { quantity: event.target.value })}
+                    onChange={(event) =>
+                      update(item.key, { quantity: event.target.value })
+                    }
                   />
                 </div>
                 <span className="text-right text-sm font-medium tabular">
                   = {formatRand(lineTotal(item))}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <span
-                  aria-hidden
-                  className="size-2.5 shrink-0 rounded-sm"
-                  style={{ background: CATEGORY_COLOR_VAR[item.category] }}
-                />
-                <select
-                  className="field !py-1.5 !text-sm"
-                  value={item.category}
-                  aria-label={`Category for ${item.item_name || "this item"}`}
-                  onChange={(event) =>
-                    update(item.key, { category: event.target.value as Category })
-                  }
-                >
-                  {CATEGORIES.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!trip && (
+                <div className="flex items-center gap-2">
+                  <span
+                    aria-hidden
+                    className="size-2.5 shrink-0 rounded-sm"
+                    style={{ background: colorFor(item.category) }}
+                  />
+                  <select
+                    className="field !py-1.5 !text-sm"
+                    value={item.category}
+                    aria-label={`Category for ${item.item_name || "this item"}`}
+                    onChange={(event) =>
+                      update(item.key, {
+                        category: event.target.value as Category,
+                      })
+                    }
+                  >
+                    <CategoryOptions current={item.category} />
+                  </select>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
-
     </section>
   );
 }

@@ -7,7 +7,8 @@ import { saveBudgets } from "@/app/budget/actions";
 import { MoneyField } from "@/components/MoneyField";
 import { SaveBar } from "@/components/SaveBar";
 import type { CategoryTotal } from "@/lib/aggregate";
-import { CATEGORIES, CATEGORY_HINTS, type Category } from "@/lib/categories";
+import { useCategories } from "@/components/CategoriesContext";
+import { isCategory as isBuiltIn, type Category } from "@/lib/categories";
 import { formatRand, parseRand, round2, sum } from "@/lib/money";
 import type { MonthKey } from "@/lib/month";
 import type { BudgetRow } from "@/lib/types";
@@ -38,9 +39,15 @@ export function BudgetsForm({
 }) {
   const router = useRouter();
 
+  // Every category shown for this month, built-in first, then your own and
+  // any current trip's.
+  const names = categories.map((c) => c.category);
+  const hintOf = (name: string) => list.find((c) => c.name === name)?.hint ?? "";
+  const list = useCategories();
+
   const [amounts, setAmounts] = useState<Record<Category, string>>(() => {
     const byCategory = new Map(budgets.map((b) => [b.category, Number(b.budgeted_amount) || 0]));
-    return CATEGORIES.reduce(
+    return names.reduce(
       (acc, category) => {
         const value = byCategory.get(category) ?? 0;
         return { ...acc, [category]: value === 0 ? "" : String(round2(value)) };
@@ -57,7 +64,7 @@ export function BudgetsForm({
   const [error, setError] = useState<string | null>(null);
 
   const actualByCategory = new Map(categories.map((c) => [c.category, c.actual]));
-  const budgetTotal = sum(CATEGORIES.map((category) => parseRand(amounts[category])));
+  const budgetTotal = sum(names.map((category) => parseRand(amounts[category] ?? "")));
   const unallocated = round2(salaryAfterTax - committedTotal - parsedDeficit - budgetTotal);
 
   async function save() {
@@ -66,9 +73,9 @@ export function BudgetsForm({
 
     const result = await saveBudgets({
       monthKey,
-      budgets: CATEGORIES.map((category) => ({
+      budgets: names.map((category) => ({
         category,
-        budgeted_amount: parseRand(amounts[category]),
+        budgeted_amount: parseRand(amounts[category] ?? ""),
       })),
       // Left out when untouched, so budgets still save on a database that has
       // not had migration 0005 yet.
@@ -96,15 +103,15 @@ export function BudgetsForm({
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        {CATEGORIES.map((category) => {
+        {names.filter(isBuiltIn).map((category) => {
           const actual = actualByCategory.get(category) ?? 0;
-          const budgeted = parseRand(amounts[category]);
+          const budgeted = parseRand(amounts[category] ?? "");
           return (
             <MoneyField
               key={category}
-              id={`budget-${category.toLowerCase()}`}
+              id={`budget-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
               label={category}
-              value={amounts[category]}
+              value={amounts[category] ?? ""}
               onChange={(value) => setAmounts((current) => ({ ...current, [category]: value }))}
               hint={
                 actual > 0
@@ -113,7 +120,7 @@ export function BudgetsForm({
                         ? ` — ${formatRand(actual - budgeted)} over`
                         : ""
                     }`
-                  : CATEGORY_HINTS[category]
+                  : hintOf(category)
               }
               action={
                 actual > 0 && Math.abs(actual - budgeted) >= 0.01
@@ -154,6 +161,41 @@ export function BudgetsForm({
               : undefined
           }
         />
+        {names.filter((n) => !isBuiltIn(n)).map((category) => {
+          const actual = actualByCategory.get(category) ?? 0;
+          const budgeted = parseRand(amounts[category] ?? "");
+          return (
+            <MoneyField
+              key={category}
+              id={`budget-${category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+              label={category}
+              badge={categories.find((c) => c.category === category)?.kind === "trip" ? "Trip" : undefined}
+              value={amounts[category] ?? ""}
+              onChange={(value) => setAmounts((current) => ({ ...current, [category]: value }))}
+              hint={
+                actual > 0
+                  ? `${formatRand(actual)} spent${
+                      budgeted > 0 && actual > budgeted
+                        ? ` — ${formatRand(actual - budgeted)} over`
+                        : ""
+                    }`
+                  : hintOf(category)
+              }
+              action={
+                actual > 0 && Math.abs(actual - budgeted) >= 0.01
+                  ? {
+                      label: "Match actual",
+                      onClick: () =>
+                        setAmounts((current) => ({
+                          ...current,
+                          [category]: String(round2(actual)),
+                        })),
+                    }
+                  : undefined
+              }
+            />
+          );
+        })}
       </div>
 
       <dl className="space-y-1.5 rounded-lg bg-sunken p-3 text-sm">

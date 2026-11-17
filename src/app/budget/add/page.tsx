@@ -14,9 +14,9 @@ export const metadata = { title: "Add to the month - Budget" };
 export default async function CapturePage({
   searchParams,
 }: {
-  searchParams: Promise<{ m?: string; event?: string }>;
+  searchParams: Promise<{ m?: string; event?: string; category?: string }>;
 }) {
-  const { m, event } = await searchParams;
+  const { m, event, category } = await searchParams;
 
   const supabase = await createClient();
   const {
@@ -59,6 +59,7 @@ export default async function CapturePage({
             id: trip.id,
             name: trip.name,
             participants: trip.participants,
+            category: trip.category,
           }}
         />
       </div>
@@ -80,7 +81,8 @@ export default async function CapturePage({
         </p>
       </header>
 
-      <AddExpense monthKey={monthKey} userId={user.id} starts={months} />
+      <AddExpense monthKey={monthKey} userId={user.id} starts={months}   intoCategory={category ? category.slice(0, 40) : null}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { BudgetsForm } from "@/components/BudgetsForm";
 import { ExportMenu } from "@/components/ExportMenu";
 import { FixedExpensesForm } from "@/components/FixedExpensesForm";
 import { MonthSummaryForm } from "@/components/MonthSummaryForm";
+import { CategoryManager } from "@/components/CategoryManager";
 import { MonthSwitcher } from "@/components/MonthSwitcher";
 import { PaydayForm } from "@/components/PaydayForm";
 import { analyseMonth } from "@/lib/aggregate";
@@ -30,7 +31,19 @@ export default async function PlanPage({
   const snapshot = await getMonthSnapshot(supabase, user.id, monthKey);
   const knownMonths = months.map((row) => row.month);
 
-  const { categories, totals } = analyseMonth(snapshot);
+  const { categories: allCategories, totals } = analyseMonth(snapshot);
+  // A trip's category shows while the trip is on or ahead, or when it has a
+  // budget or spending this month; finished trips step aside.
+  const categories = allCategories.filter(
+    (c) =>
+      c.kind !== "trip" ||
+      c.budgeted !== 0 ||
+      c.actual !== 0 ||
+      !snapshot.categories?.find((x) => x.name === c.category)?.endDate ||
+      (snapshot.period &&
+        snapshot.categories!.find((x) => x.name === c.category)!.endDate! >=
+          snapshot.period.start),
+  );
 
   // How last month ended, so its overspend can be carried in as a deficit.
   // Only read if it exists: opening it would otherwise create an empty month.
@@ -67,6 +80,7 @@ export default async function PlanPage({
       <MonthSummaryForm monthKey={monthKey} month={snapshot.month} />
 
       <BudgetsForm
+        key={categories.map((c) => c.category).join("|")}
         monthKey={monthKey}
         budgets={snapshot.budgets}
         categories={categories}
@@ -75,6 +89,8 @@ export default async function PlanPage({
         deficit={totals.deficit}
         previousMonth={previousMonth}
       />
+
+      <CategoryManager />
 
       <FixedExpensesForm monthKey={monthKey} items={snapshot.fixedExpenses} />
     </div>

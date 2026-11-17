@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import * as z from "zod";
 
-import { CATEGORIES } from "@/lib/categories";
 import { budgetMonthOf, ensureMonth, listMonths } from "@/lib/data";
 import { round2 } from "@/lib/money";
 import { isIsoDate, isMonthKey, monthKeyToDate, shiftMonth } from "@/lib/month";
 import { budgetMonthFor, paydayProblem } from "@/lib/period";
+import { moveCategoryRows } from "@/lib/category-rows";
 import { EVENT_CATEGORIES, guessEventCategory } from "@/lib/events";
 import { createClient } from "@/lib/supabase/server";
 
@@ -22,7 +22,8 @@ export type ActionResult<T = undefined> =
   | { ok: false; error: string };
 
 const MonthKeySchema = z.string().refine(isMonthKey, "Expected a month like 2026-09");
-const CategorySchema = z.enum(CATEGORIES);
+// Built in or one of your own; the database refuses any other (migration 0009).
+const CategorySchema = z.string().trim().min(1).max(40);
 const AmountSchema = z.coerce.number().finite().min(-1_000_000).max(10_000_000);
 const DateSchema = z.string().refine(isIsoDate, "Expected a real date like 2026-09-14");
 
@@ -129,7 +130,8 @@ export async function saveReceipt(
         store_name: input.store_name,
         date: input.date,
         total: round2(input.total),
-        category: input.category,
+        // A trip receipt counts under the trip's own category.
+        category: trip ? trip.category : input.category,
         note: input.note ?? null,
         image_path: input.image_path ?? null,
         raw_extraction: input.raw_extraction ?? null,
@@ -148,7 +150,7 @@ export async function saveReceipt(
           item_name: item.item_name,
           amount: round2(item.amount),
           quantity: item.quantity ?? null,
-          category: item.category,
+          category: trip ? trip.category : item.category,
           position: index,
         })),
       );
@@ -244,7 +246,7 @@ async function resolveTrip(
   userId: string,
   eventId: string,
   paidBy: string | null,
-): Promise<{ eventId: string; paidBy: string; mine: boolean }> {
+): Promise<{ eventId: string; paidBy: string; mine: boolean; category: string }> {
   const people = await supabase
     .from("event_participants")
     .select("id, is_me")
@@ -254,7 +256,21 @@ async function resolveTrip(
   const rows = (people.data ?? []) as { id: string; is_me: boolean }[];
   const payer = paidBy ? rows.find((p) => p.id === paidBy) : rows.find((p) => p.is_me);
   if (!payer) throw new Error("That trip or person was not found.");
-  return { eventId, paidBy: payer.id, mine: payer.is_me };
+  const category = await supabase
+    .from("budget_categories")
+    .select("name")
+    .eq("event_id", eventId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (category.error) throw category.error;
+  return {
+    eventId,
+    paidBy: payer.id,
+    mine: payer.is_me,
+    // Every trip has its own budget category; a trip saved without one
+    // (it should not happen) falls back to Miscellaneous.
+    category: category.data?.name ?? "Miscellaneous",
+  };
 }
 
 /** Whether a receipt sits on a trip, paid by someone other than you. */
@@ -313,9 +329,20 @@ export async function assignReceiptToTrip(
             await budgetMonthOf(supabase, userId, receipt.data.date as string),
           );
 
+    // On a trip, the receipt and its lines count under the trip's category;
+    // taken off one, they go to Miscellaneous to be re-sorted.
+    const category = trip ? trip.category : "Miscellaneous";
+    const lines = await supabase
+      .from("line_items")
+      .update({ category })
+      .eq("receipt_id", input.receiptId)
+      .eq("user_id", userId);
+    if (lines.error) throw lines.error;
+
     const { error } = await supabase
       .from("receipts")
       .update({
+        category,
         month_id: month?.id ?? null,
         event_id: trip?.eventId ?? null,
         paid_by: trip?.paidBy ?? null,
@@ -741,6 +768,94 @@ export async function deleteIncome(id: string): Promise<ActionResult> {
       .eq("user_id", userId);
     if (error) throw error;
 
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Your own categories                                                        */
+/* -------------------------------------------------------------------------- */
+
+const CategoryName = z
+  .string()
+  .trim()
+  .min(1, "Name the category.")
+  .max(34, "Keep the name under 35 characters.");
+
+/** Adds a category of your own, next to the built-in six. */
+export async function addCategory(name: string): Promise<ActionResult> {
+  try {
+    const clean = CategoryName.parse(name);
+    const { supabase, userId } = await session();
+    const { error } = await supabase
+      .from("budget_categories")
+      .insert({ user_id: userId, name: clean });
+    if (error?.code === "23505") return { ok: false, error: `You already have "${clean}".` };
+    if (error?.code === "23514") return { ok: false, error: `"${clean}" is a built-in category.` };
+    if (error) throw error;
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/** Renames one of your own categories, and everything filed under it. */
+export async function renameCategory(from: string, to: string): Promise<ActionResult> {
+  try {
+    const clean = CategoryName.parse(to);
+    const { supabase, userId } = await session();
+    if (clean === from) return { ok: true };
+    const renamed = await supabase
+      .from("budget_categories")
+      .update({ name: clean })
+      .eq("user_id", userId)
+      .eq("name", from)
+      .is("event_id", null)
+      .select("id");
+    if (renamed.error?.code === "23505") return { ok: false, error: `You already have "${clean}".` };
+    if (renamed.error?.code === "23514") return { ok: false, error: `"${clean}" is a built-in category.` };
+    if (renamed.error) throw renamed.error;
+    if ((renamed.data ?? []).length === 0) {
+      return { ok: false, error: "Only your own categories can be renamed." };
+    }
+    await moveCategoryRows(supabase, userId, from, clean);
+    revalidateMonth();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/**
+ * Removes one of your own categories. What was filed under it moves to
+ * Miscellaneous, so no rand goes missing; its budgets go with it.
+ */
+export async function removeCategory(name: string): Promise<ActionResult> {
+  try {
+    CategoryName.parse(name);
+    const { supabase, userId } = await session();
+    const own = await supabase
+      .from("budget_categories")
+      .select("id, event_id")
+      .eq("user_id", userId)
+      .eq("name", name)
+      .maybeSingle();
+    if (own.error) throw own.error;
+    if (!own.data) return { ok: false, error: "Only your own categories can be removed." };
+    if (own.data.event_id) {
+      return { ok: false, error: "This is a trip's category: it goes when the trip is deleted." };
+    }
+    await moveCategoryRows(supabase, userId, name, "Miscellaneous", { dropBudgets: true });
+    const { error } = await supabase
+      .from("budget_categories")
+      .delete()
+      .eq("id", own.data.id)
+      .eq("user_id", userId);
+    if (error) throw error;
     revalidateMonth();
     return { ok: true };
   } catch (error) {

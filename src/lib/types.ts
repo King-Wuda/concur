@@ -81,6 +81,10 @@ export type MonthSnapshot = {
   receipts: ReceiptWithItems[];
   fixedExpenses: FixedExpenseRow[];
   income: IncomeRow[];
+  /** Every category in use for this person; absent in older fixtures (built-ins only). */
+  categories?: import("@/lib/categories").CategoryInfo[];
+  /** Trip money you sent (out) or received (in) this month, under the trip's category. */
+  transfers?: { amount: number; category: string; direction: "in" | "out" }[];
 };
 
 /** A draft receipt as returned by the vision model, before the user confirms. */

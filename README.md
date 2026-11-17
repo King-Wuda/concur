@@ -61,6 +61,15 @@ page (`src/app/page.tsx`) and an entry in `SECTIONS` in
   your monthly budget; what others paid counts on the trip only. The report
   shows spend against budget, how much you and each person covered, and a
   settle-up that splits everything equally - who pays whom, to the cent.
+- **Money sent on a trip.** Record money one person sent another - say each
+  friend sends you their share so you can pay the whole Airbnb. It counts in
+  the settle-up, and what you send or receive counts in your monthly budget.
+- **Your own categories.** Add, rename and remove categories next to the
+  built-in six on the Plan page; each has a budget, a meter and a slice of the
+  chart. Every trip gets one named after it, where everything on the trip
+  involving your money lands: what you paid, less what was sent to you. A
+  removed category's spending moves to Miscellaneous. When scanning, "Put
+  these in" files a whole batch under one category.
 - **Line items add up.** Each line is a price times a quantity, and a
   receipt's total is the sum of its lines, so 56 + 28 is R84 and changing a
   quantity changes the total. A scanned slip whose lines fall short of its
@@ -162,7 +171,7 @@ payday (`months.period_start`, null meaning the usual 24th), and
 `0007_goals_routine_body.sql` adds goals, milestones, the routine, the body
 log and quotes; `0008_routine_times.sql` adds habit times and categories, goal
 categories and start dates, and the step goal; `0009_events.sql` adds trips
-and events.
+and events, money sent between people on them, and your own categories.
 Nothing is readable without a session that owns the row.
 
 **Running a migration over data you already have does not touch it.** Every one

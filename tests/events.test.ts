@@ -87,3 +87,45 @@ test("trip category guessed from the monthly one", () => {
   assert.equal(guessEventCategory("Chill"), "Food");
   assert.equal(guessEventCategory("Lily"), "Other");
 });
+
+test("money sent ahead lets you pay for others and still only put in your share", () => {
+  // You pay the R3 000 Airbnb for two; Thabo had sent you R1 500 for his half.
+  const s = summariseEvent(
+    0,
+    {},
+    [you, thabo],
+    [{ total: 3000, paid_by: "me", event_category: "Accommodation" }],
+    [{ from: "t", to: "me", amount: 1500 }],
+  );
+  const mine = s.people.find((p) => p.participant.is_me)!;
+  assert.deepEqual([mine.paid, mine.received, mine.share, mine.balance], [3000, 1500, 1500, 0]);
+  assert.deepEqual(s.settlements, []);
+});
+
+test("a part payment leaves the rest in the settle-up", () => {
+  const s = summariseEvent(
+    0,
+    {},
+    [you, thabo],
+    [{ total: 3000, paid_by: "me", event_category: "Accommodation" }],
+    [{ from: "t", to: "me", amount: 1000 }],
+  );
+  assert.deepEqual(
+    s.settlements.map((x) => `${x.from.name}->${x.to.name}:${x.amount}`),
+    ["Thabo->You:500"],
+  );
+});
+
+test("money between two others counts too, and can overshoot", () => {
+  // Thabo paid R900 for three; Lerato sent Thabo R600 - R300 too much.
+  const s = summariseEvent(
+    0,
+    {},
+    [you, thabo, lerato],
+    [{ total: 900, paid_by: "t", event_category: "Food" }],
+    [{ from: "l", to: "t", amount: 600 }],
+  );
+  const lines = s.settlements.map((x) => `${x.from.name}->${x.to.name}:${x.amount}`).sort();
+  // You owe your R300 share; Thabo has R300 of Lerato's too many, so you pay Lerato.
+  assert.deepEqual(lines, ["You->Lerato:300"]);
+});

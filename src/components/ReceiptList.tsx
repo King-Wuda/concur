@@ -12,7 +12,8 @@ import {
   withBalancingLine,
   type DraftLineItem,
 } from "@/components/LineItemEditor";
-import { CATEGORIES, CATEGORY_COLOR_VAR, type Category } from "@/lib/categories";
+import { CategoryOptions, useCategoryColor } from "@/components/CategoriesContext";
+import type { Category } from "@/lib/categories";
 import { formatRand, parseRand, round2 } from "@/lib/money";
 import type { ReceiptWithItems } from "@/lib/types";
 
@@ -21,6 +22,7 @@ import type { ReceiptWithItems } from "@/lib/types";
  * model got wrong can be fixed in two taps without leaving the list.
  */
 export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
+  const colorFor = useCategoryColor();
   const [openId, setOpenId] = useState<string | null>(null);
 
   return (
@@ -36,7 +38,7 @@ export function ReceiptList({ receipts }: { receipts: ReceiptWithItems[] }) {
             <span
               aria-hidden
               className="size-2.5 shrink-0 rounded-sm"
-              style={{ background: CATEGORY_COLOR_VAR[receipt.category] }}
+              style={{ background: colorFor(receipt.category) }}
             />
             <span className="min-w-0 flex-1">
               <span className="block truncate font-medium">{receipt.store_name}</span>
@@ -202,11 +204,7 @@ function ReceiptEditor({
               setCategory(next);
             }}
           >
-            {CATEGORIES.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
+            <CategoryOptions current={category} />
           </select>
         </div>
 

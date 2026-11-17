@@ -1,4 +1,4 @@
-import { CATEGORIES, type Category } from "@/lib/categories";
+import { categoryList, type Category, type CategoryInfo } from "@/lib/categories";
 import { percentOf, round2, sum } from "@/lib/money";
 import type { MonthSnapshot } from "@/lib/types";
 
@@ -9,6 +9,8 @@ import type { MonthSnapshot } from "@/lib/types";
 
 export type CategoryTotal = {
   category: Category;
+  color: string;
+  kind: CategoryInfo["kind"];
   budgeted: number;
   actual: number;
   /** budgeted - actual. Negative means over budget. */
@@ -86,15 +88,32 @@ export type MonthAnalysis = {
   totals: MonthTotals;
 };
 
-function emptyCategoryMap(): Record<Category, number> {
-  return CATEGORIES.reduce(
-    (acc, category) => ({ ...acc, [category]: 0 }),
-    {} as Record<Category, number>,
-  );
-}
-
 export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
   const { month, budgets, receipts, fixedExpenses, income } = snapshot;
+
+  // The built-in six, your own and your trips', plus any name still on a row
+  // whose category has since been removed - its money has to show somewhere.
+  const listed = snapshot.categories ?? categoryList();
+  const used = [
+    ...budgets.map((b) => b.category),
+    ...receipts.flatMap((r) => [r.category, ...(r.line_items ?? []).map((i) => i.category)]),
+    ...fixedExpenses.map((f) => f.category),
+    ...(snapshot.transfers ?? []).map((t) => t.category),
+  ];
+  const list: CategoryInfo[] = [
+    ...listed,
+    ...[...new Set(used)]
+      .filter((name) => !listed.some((c) => c.name === name))
+      .map((name) => ({
+        name,
+        color: "var(--ink-muted)",
+        kind: "custom" as const,
+        hint: "A category that has been removed",
+      })),
+  ];
+  const CATEGORIES = list.map((c) => c.name);
+  const emptyCategoryMap = (): Record<Category, number> =>
+    Object.fromEntries(CATEGORIES.map((c) => [c, 0]));
 
   const actualByCategory = emptyCategoryMap();
   const budgetByCategory = emptyCategoryMap();
@@ -135,17 +154,27 @@ export function analyseMonth(snapshot: MonthSnapshot): MonthAnalysis {
     }
   }
 
+  // Money sent between you and others on a trip lands in the trip's category:
+  // what you sent adds to your part of the trip, what was sent to you takes
+  // it away - so the category shows what the trip really cost you.
+  for (const transfer of snapshot.transfers ?? []) {
+    const amount = Number(transfer.amount) || 0;
+    actualByCategory[transfer.category] += transfer.direction === "out" ? amount : -amount;
+  }
+
   const categoryActualTotal = sum(CATEGORIES.map((c) => actualByCategory[c]));
   const positiveSpendTotal = sum(
     CATEGORIES.map((c) => Math.max(round2(actualByCategory[c]), 0)),
   );
 
-  const categories: CategoryTotal[] = CATEGORIES.map((category) => {
+  const categories: CategoryTotal[] = list.map(({ name: category, color, kind }) => {
     const actual = round2(actualByCategory[category]);
     const budgeted = round2(budgetByCategory[category]);
     const variance = round2(budgeted - actual);
     return {
       category,
+      color,
+      kind,
       budgeted,
       actual,
       variance,

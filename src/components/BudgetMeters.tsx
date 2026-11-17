@@ -1,5 +1,4 @@
 import type { CategoryTotal } from "@/lib/aggregate";
-import { CATEGORY_COLOR_VAR } from "@/lib/categories";
 import { formatRand } from "@/lib/money";
 
 /**
@@ -32,7 +31,7 @@ export function BudgetMeters({ categories }: { categories: CategoryTotal[] }) {
 
 function Meter({ category }: { category: CategoryTotal }) {
   const { budgeted, actual, variance, isOver } = category;
-  const color = CATEGORY_COLOR_VAR[category.category];
+  const color = category.color;
 
   // With a budget, the track is the budget and the fill is the spend. Once
   // over, the track represents the overspent total so the excess is visible as

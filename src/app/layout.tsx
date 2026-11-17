@@ -3,7 +3,9 @@ import { Suspense } from "react";
 
 import "./globals.css";
 import { AppShell } from "@/components/AppShell";
-import { resolveMonth } from "@/lib/data";
+import { CategoriesProvider } from "@/components/CategoriesContext";
+import { categoryList } from "@/lib/categories";
+import { listCustomCategories, resolveMonth } from "@/lib/data";
 import { createClient, getUser } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
@@ -47,6 +49,11 @@ export default async function RootLayout({
         .catch(() => null)
     : null;
 
+  // Every category, built-in and your own, for the forms that offer them.
+  const categories = categoryList(
+    user ? await listCustomCategories(await createClient(), user.id).catch(() => []) : [],
+  );
+
   return (
     <html lang="en-ZA" suppressHydrationWarning>
       <head>
@@ -55,9 +62,11 @@ export default async function RootLayout({
       <body className="min-h-dvh antialiased">
         {/* AppShell reads the `m` search param, which needs a boundary. */}
         <Suspense fallback={null}>
-          <AppShell userEmail={user?.email ?? null} currentKey={currentKey}>
-            {children}
-          </AppShell>
+          <CategoriesProvider categories={categories}>
+            <AppShell userEmail={user?.email ?? null} currentKey={currentKey}>
+              {children}
+            </AppShell>
+          </CategoriesProvider>
         </Suspense>
       </body>
     </html>

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import * as z from "zod";
 
 import { EVENT_CATEGORIES } from "@/lib/events";
+import { createCategory, moveCategoryRows } from "@/lib/category-rows";
+import { budgetMonthOf, ensureMonth } from "@/lib/data";
 import { round2 } from "@/lib/money";
 import { isIsoDate } from "@/lib/month";
 import { createClient } from "@/lib/supabase/server";
@@ -132,6 +134,8 @@ export async function createEvent(
     if (people.error) throw people.error;
 
     await writeBudgets(supabase, userId, eventId, input.category_budgets);
+    // The trip's own category in your monthly budget, named after it.
+    await createCategory(supabase, userId, input.name, eventId);
     revalidate();
     return { ok: true, data: { id: eventId } };
   } catch (error) {
@@ -157,6 +161,28 @@ export async function updateEvent(raw: EventFieldsInput & { id: string }): Promi
       .eq("user_id", userId);
     if (error) throw error;
     await writeBudgets(supabase, userId, id, input.category_budgets);
+
+    // Renaming the trip renames its category, if the new name is free.
+    const own = await supabase
+      .from("budget_categories")
+      .select("name")
+      .eq("event_id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (own.error) throw own.error;
+    const wanted = input.name.slice(0, 34);
+    if (own.data && own.data.name !== wanted) {
+      const renamed = await supabase
+        .from("budget_categories")
+        .update({ name: wanted })
+        .eq("event_id", id)
+        .eq("user_id", userId);
+      if (!renamed.error) await moveCategoryRows(supabase, userId, own.data.name, wanted);
+      else if (renamed.error.code !== "23505" && renamed.error.code !== "23514") {
+        throw renamed.error;
+      }
+    }
+
     revalidate();
     return { ok: true };
   } catch (error) {
@@ -186,6 +212,20 @@ export async function deleteEvent(id: string): Promise<ActionResult> {
       .eq("event_id", id)
       .eq("user_id", userId);
     if (mine.error) throw mine.error;
+    // What you paid stays in your months, back under Miscellaneous; the
+    // trip's category and its budgets go with the trip.
+    const own = await supabase
+      .from("budget_categories")
+      .select("name")
+      .eq("event_id", id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (own.error) throw own.error;
+    if (own.data) {
+      await moveCategoryRows(supabase, userId, own.data.name, "Miscellaneous", {
+        dropBudgets: true,
+      });
+    }
     const { error } = await supabase.from("events").delete().eq("id", id).eq("user_id", userId);
     if (error) throw error;
     revalidate();
@@ -262,12 +302,101 @@ export async function removeParticipant(id: string): Promise<ActionResult> {
         error: "They paid for something on this trip. Change who paid for it first.",
       };
     }
+    const sent = await supabase
+      .from("event_transfers")
+      .select("id", { count: "exact", head: true })
+      .or(`from_participant.eq.${id},to_participant.eq.${id}`)
+      .eq("user_id", userId);
+    if (sent.error) throw sent.error;
+    if ((sent.count ?? 0) > 0) {
+      return {
+        ok: false,
+        error: "They sent or received money on this trip. Delete those transfers first.",
+      };
+    }
     const { error } = await supabase
       .from("event_participants")
       .delete()
       .eq("id", id)
       .eq("user_id", userId)
       .eq("is_me", false);
+    if (error) throw error;
+    revalidate();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Money sent between people on a trip                                        */
+/* -------------------------------------------------------------------------- */
+
+const TransferInput = z
+  .object({
+    eventId: Id,
+    from: Id,
+    to: Id,
+    amount: z.number().finite().gt(0, "Enter how much was sent.").max(10_000_000),
+    date: DateSchema,
+    note: z.string().trim().max(200).nullable().optional(),
+  })
+  .refine((t) => t.from !== t.to, { message: "Someone cannot send money to themselves." });
+
+export type TransferInput = z.input<typeof TransferInput>;
+
+/**
+ * Records money one person on a trip sent another. It counts in the settle-up;
+ * if you sent or received it, it also counts in that month's budget under
+ * the trip's category.
+ */
+export async function addTransfer(raw: TransferInput): Promise<ActionResult> {
+  try {
+    const input = TransferInput.parse(raw);
+    const { supabase, userId } = await session();
+
+    const people = await supabase
+      .from("event_participants")
+      .select("id, is_me")
+      .eq("event_id", input.eventId)
+      .eq("user_id", userId)
+      .in("id", [input.from, input.to]);
+    if (people.error) throw people.error;
+    const rows = (people.data ?? []) as { id: string; is_me: boolean }[];
+    if (rows.length !== 2) return { ok: false, error: "Those people are not on this trip." };
+
+    const involvesYou = rows.some((p) => p.is_me);
+    const month = involvesYou
+      ? await ensureMonth(supabase, userId, await budgetMonthOf(supabase, userId, input.date))
+      : null;
+
+    const { error } = await supabase.from("event_transfers").insert({
+      user_id: userId,
+      event_id: input.eventId,
+      from_participant: input.from,
+      to_participant: input.to,
+      amount: round2(input.amount),
+      date: input.date,
+      note: input.note || null,
+      month_id: month?.id ?? null,
+    });
+    if (error) throw error;
+    revalidate();
+    return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function deleteTransfer(id: string): Promise<ActionResult> {
+  try {
+    Id.parse(id);
+    const { supabase, userId } = await session();
+    const { error } = await supabase
+      .from("event_transfers")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", userId);
     if (error) throw error;
     revalidate();
     return { ok: true };

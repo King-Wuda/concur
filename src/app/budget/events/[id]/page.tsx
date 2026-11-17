@@ -6,6 +6,8 @@ import { EventsSetupNeeded } from "@/components/events/EventsSetupNeeded";
 import { PeopleEditor } from "@/components/events/PeopleEditor";
 import { ReceiptTripRow } from "@/components/events/ReceiptTripRow";
 import { SpendBar } from "@/components/events/SpendBar";
+import { TransfersSection } from "@/components/events/TransfersSection";
+import { todayInSouthAfrica } from "@/lib/period";
 import { formatDateRange } from "@/lib/dates";
 import { EventsNotSetUpError, getEvent } from "@/lib/events-data";
 import { formatRand, sum } from "@/lib/money";
@@ -53,6 +55,12 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           </p>
         )}
         {event.notes && <p className="text-sm text-ink-muted">{event.notes}</p>}
+        {event.category && (
+          <p className="text-xs text-ink-muted">
+            In your monthly budget as the category &ldquo;{event.category}&rdquo;: what you paid,
+            less what was sent to you.
+          </p>
+        )}
       </header>
 
       <section className="card space-y-3 p-4 sm:p-5">
@@ -95,7 +103,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <header>
             <h2 className="font-semibold">Who paid</h2>
             <p className="text-sm text-ink-secondary">
-              You covered {formatRand(me?.paid ?? 0)}, others {formatRand(othersPaid)}. Split
+              You covered {formatRand(me?.paid ?? 0)}
+              {me && me.received > 0 && ` (${formatRand(me.paid - me.received + me.sent)} of your own money)`}
+              , others {formatRand(othersPaid)}. Split
               equally, everyone&apos;s share is{" "}
               {formatRand(summary.people[summary.people.length - 1]?.share ?? 0)}.
             </p>
@@ -105,6 +115,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
               <tr className="text-left text-xs text-ink-muted">
                 <th className="pb-1 font-medium">Person</th>
                 <th className="pb-1 text-right font-medium">Paid</th>
+                {event.transfers.length > 0 && (
+                  <th className="pb-1 text-right font-medium">Sent / got</th>
+                )}
                 <th className="pb-1 text-right font-medium">Balance</th>
               </tr>
             </thead>
@@ -113,6 +126,13 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
                 <tr key={p.participant.id}>
                   <td className="py-2 font-medium">{nameOf(p.participant)}</td>
                   <td className="py-2 text-right tabular">{formatRand(p.paid)}</td>
+                  {event.transfers.length > 0 && (
+                    <td className="py-2 text-right text-xs tabular text-ink-secondary">
+                      {p.sent > 0 && <span className="block">sent {formatRand(p.sent)}</span>}
+                      {p.received > 0 && <span className="block">got {formatRand(p.received)}</span>}
+                      {p.sent === 0 && p.received === 0 && "—"}
+                    </td>
+                  )}
                   <td
                     className="py-2 text-right tabular"
                     style={{
@@ -156,6 +176,14 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           </div>
         </section>
       )}
+
+      <TransfersSection
+        eventId={event.id}
+        participants={event.participants}
+        transfers={event.transfers}
+        today={todayInSouthAfrica()}
+        category={event.category}
+      />
 
       <section className="space-y-2">
         <h2 className="font-semibold">

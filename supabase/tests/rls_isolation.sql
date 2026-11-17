@@ -145,13 +145,25 @@ values
 insert into public.event_budgets (user_id, event_id, category, amount)
 values ('11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'Food', 2000);
 
+insert into public.budget_categories (user_id, name, event_id)
+values ('11111111-1111-1111-1111-111111111111', 'Cape Town trip', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+
 -- Paid by someone else: on the event only, in no budget month.
 insert into public.receipts
   (user_id, month_id, event_id, paid_by, event_category, store_name, date, total, category)
 values (
   '11111111-1111-1111-1111-111111111111', null,
   'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'cccccccc-cccc-cccc-cccc-cccccccccccc',
-  'Accommodation', 'Airbnb', '2026-12-20', 3600, 'Miscellaneous'
+  'Accommodation', 'Airbnb', '2026-12-20', 3600, 'Cape Town trip'
+);
+
+-- Thabo sent you money for the trip.
+insert into public.event_transfers
+  (user_id, event_id, from_participant, to_participant, amount, date, month_id)
+values (
+  '11111111-1111-1111-1111-111111111111', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+  'cccccccc-cccc-cccc-cccc-cccccccccccc', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
+  1000, '2026-12-18', '33333333-3333-3333-3333-333333333333'
 );
 
 insert into public.user_settings (user_id, step_goal)
@@ -201,7 +213,9 @@ begin
      or (select count(*) from public.user_settings) <> 1
      or (select count(*) from public.events) <> 1
      or (select count(*) from public.event_participants) <> 2
-     or (select count(*) from public.event_budgets) <> 1 then
+     or (select count(*) from public.event_budgets) <> 1
+     or (select count(*) from public.budget_categories) <> 1
+     or (select count(*) from public.event_transfers) <> 1 then
     raise exception 'owner cannot see their own goals, routine or body log';
   end if;
   raise notice 'PASS  owner sees their own rows';
@@ -221,7 +235,8 @@ begin
     'months', 'budgets', 'receipts', 'line_items', 'fixed_expenses', 'income',
     'workout_days', 'workout_exercises', 'workout_sessions', 'workout_sets',
     'goals', 'goal_milestones', 'habits', 'habit_checks', 'body_logs', 'quotes',
-    'user_settings', 'events', 'event_budgets', 'event_participants'
+    'user_settings', 'events', 'event_budgets', 'event_participants',
+    'budget_categories', 'event_transfers'
   ]
   loop
     execute format('select count(*) from public.%I', t) into visible;
@@ -435,6 +450,25 @@ begin
   end;
 
   raise notice 'PASS  every receipt belongs somewhere, and each event has one of you';
+
+  begin
+    insert into public.budget_categories (user_id, name)
+    values ('11111111-1111-1111-1111-111111111111', 'Groceries');
+    raise exception 'a custom category shadowing a built-in one was accepted';
+  exception
+    when check_violation then null;
+  end;
+
+  -- Your own category works once it exists.
+  insert into public.budget_categories (user_id, name)
+  values ('11111111-1111-1111-1111-111111111111', 'Gifts');
+  insert into public.receipts (user_id, month_id, store_name, date, total, category)
+  values (
+    '11111111-1111-1111-1111-111111111111', '33333333-3333-3333-3333-333333333333',
+    'Gift shop', '2026-09-12', 250, 'Gifts'
+  );
+
+  raise notice 'PASS  your own categories are accepted, and cannot shadow built-in ones';
 end $$;
 
 -- --------------------------------------------------------------------------

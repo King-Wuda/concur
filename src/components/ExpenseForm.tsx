@@ -11,7 +11,8 @@ import {
   type DraftLineItem,
 } from "@/components/LineItemEditor";
 import { useTrip, type Trip } from "@/components/TripContext";
-import { CATEGORIES, type Category } from "@/lib/categories";
+import { CategoryOptions } from "@/components/CategoriesContext";
+import type { Category } from "@/lib/categories";
 import { EVENT_CATEGORIES, guessEventCategory, isEventCategory } from "@/lib/events";
 import { formatRand, parseRand } from "@/lib/money";
 import { useMonthStarts } from "@/components/BudgetCalendar";
@@ -253,23 +254,26 @@ export function ExpenseFields({
           </div>
         </div>
 
-        <div className="space-y-1.5">
-          <label htmlFor={id("category")} className="text-sm font-medium">
-            Category
-          </label>
-          <select
-            id={id("category")}
-            className="field"
-            value={values.category}
-            onChange={(event) => changeCategory(event.target.value as Category)}
-          >
-            {CATEGORIES.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        </div>
+        {trip ? (
+          <p className="text-sm text-ink-secondary">
+            Budget category:{" "}
+            <span className="font-medium text-ink">{trip.category ?? trip.name}</span>
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            <label htmlFor={id("category")} className="text-sm font-medium">
+              Category
+            </label>
+            <select
+              id={id("category")}
+              className="field"
+              value={values.category}
+              onChange={(event) => changeCategory(event.target.value as Category)}
+            >
+              <CategoryOptions current={values.category} />
+            </select>
+          </div>
+        )}
 
         <div className="space-y-1.5">
           <label htmlFor={id("note")} className="text-sm font-medium">

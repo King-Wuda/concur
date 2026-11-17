@@ -137,7 +137,11 @@ export default async function DashboardPage({
             Edit budgets
           </Link>
         </header>
-        <BudgetMeters categories={categories} />
+        <BudgetMeters
+          categories={categories.filter(
+            (c) => c.kind === "builtin" || c.budgeted !== 0 || c.actual !== 0,
+          )}
+        />
       </section>
 
       <section className="grid gap-3 sm:grid-cols-2">

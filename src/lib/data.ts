@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { CATEGORIES, type Category } from "@/lib/categories";
+import { CATEGORIES, categoryList, type Category, type CategoryInfo } from "@/lib/categories";
 import { isMonthKey, monthKeyToDate, type MonthKey } from "@/lib/month";
 import { budgetMonthFor, periodFor, todayInSouthAfrica, type MonthStart } from "@/lib/period";
 import type {
@@ -115,8 +115,14 @@ async function seedMonth(
     (priorBudgets ?? []).map((b) => [b.category, Number(b.budgeted_amount) || 0]),
   );
 
+  // Your own categories' budgets carry over like the built-in ones; a trip's
+  // does not, because a trip happens once.
+  const ownCategories = (await listCustomCategories(supabase, userId))
+    .filter((c) => !c.event_id)
+    .map((c) => c.name);
+
   await supabase.from("budgets").upsert(
-    CATEGORIES.map((category) => ({
+    [...CATEGORIES, ...ownCategories].map((category) => ({
       user_id: userId,
       month_id: month.id,
       category,
@@ -240,23 +246,30 @@ export async function getMonthSnapshot(
     line_items: [...(receipt.line_items ?? [])].sort((a, b) => a.position - b.position),
   }));
 
-  const starts = await listMonths(supabase, userId);
+  const [starts, custom, transfers] = await Promise.all([
+    listMonths(supabase, userId),
+    listCustomCategories(supabase, userId),
+    listMonthTransfers(supabase, userId, month.id),
+  ]);
+  const categories = categoryList(custom);
 
   return {
     monthKey,
     month,
     period: periodFor(monthKey, starts),
-    budgets: sortBudgets(budgets),
+    categories,
+    transfers,
+    budgets: sortBudgets(budgets, categories),
     receipts,
     fixedExpenses: (fixedResult.data ?? []) as FixedExpenseRow[],
     income: (incomeResult.data ?? []) as IncomeRow[],
   };
 }
 
-function sortBudgets(budgets: BudgetRow[]): BudgetRow[] {
-  const order = new Map(CATEGORIES.map((c, i) => [c, i]));
+function sortBudgets(budgets: BudgetRow[], categories: CategoryInfo[]): BudgetRow[] {
+  const order = new Map(categories.map((c, i) => [c.name, i]));
   return [...budgets].sort(
-    (a, b) => (order.get(a.category) ?? 0) - (order.get(b.category) ?? 0),
+    (a, b) => (order.get(a.category) ?? 999) - (order.get(b.category) ?? 999),
   );
 }
 
@@ -311,4 +324,73 @@ export async function resolveMonth(
   const months = await listMonths(supabase, userId);
   const currentKey = budgetMonthFor(todayInSouthAfrica(), months);
   return { monthKey: isMonthKey(requested) ? requested : currentKey, currentKey, months };
+}
+
+export type CustomCategoryRow = {
+  id: string;
+  name: string;
+  event_id: string | null;
+  /** For a trip's category: when the trip ends, so finished trips can step aside. */
+  event_end: string | null;
+};
+
+/**
+ * Your own categories and your trips', oldest first. Empty before migration
+ * 0009, when there are only the built-in six.
+ */
+export async function listCustomCategories(
+  supabase: DB,
+  userId: string,
+): Promise<CustomCategoryRow[]> {
+  const { data, error } = await supabase
+    .from("budget_categories")
+    .select("id, name, event_id, position, created_at, events (end_date)")
+    .eq("user_id", userId)
+    .order("position")
+    .order("created_at");
+  if (error) {
+    if (["42P01", "PGRST205", "PGRST200"].includes(error.code ?? "")) return [];
+    throw error;
+  }
+  type Raw = { id: string; name: string; event_id: string | null; events: { end_date: string | null } | null };
+  return ((data ?? []) as unknown as Raw[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    event_id: row.event_id,
+    event_end: row.events?.end_date ?? null,
+  }));
+}
+
+/**
+ * Trip money you sent or received in this budget month, each under its
+ * trip's category. Empty before migration 0009.
+ */
+export async function listMonthTransfers(
+  supabase: DB,
+  userId: string,
+  monthId: string,
+): Promise<NonNullable<MonthSnapshot["transfers"]>> {
+  const { data, error } = await supabase
+    .from("event_transfers")
+    .select(
+      "amount, from:event_participants!event_transfers_from_participant_fkey (is_me)," +
+        " events (budget_categories (name))",
+    )
+    .eq("user_id", userId)
+    .eq("month_id", monthId);
+  if (error) {
+    if (["42P01", "PGRST205", "PGRST200"].includes(error.code ?? "")) return [];
+    throw error;
+  }
+  type Raw = {
+    amount: number;
+    from: { is_me: boolean } | null;
+    events: { budget_categories: { name: string }[] } | null;
+  };
+  return ((data ?? []) as unknown as Raw[])
+    .map((row) => ({
+      amount: Number(row.amount) || 0,
+      category: row.events?.budget_categories?.[0]?.name ?? "Miscellaneous",
+      direction: (row.from?.is_me ? "out" : "in") as "in" | "out",
+    }));
 }

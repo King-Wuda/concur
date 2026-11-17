@@ -39,6 +39,9 @@ export type EventExpense = {
   event_category: string | null;
 };
 
+/** Money one participant sent another for the trip. */
+export type EventTransfer = { from: string; to: string; amount: number };
+
 export type CategoryLine = {
   category: EventCategory;
   budgeted: number;
@@ -51,7 +54,14 @@ export type PersonLine = {
   paid: number;
   /** Their equal share of everything spent. */
   share: number;
-  /** paid - share: positive means they are owed, negative that they owe. */
+  /** Money they sent others for the trip, and money others sent them. */
+  sent: number;
+  received: number;
+  /**
+   * paid - share + sent - received: positive means they are owed, negative
+   * that they owe. Sending someone money is paying towards what you owe them;
+   * receiving it is being paid back.
+   */
   balance: number;
 };
 
@@ -72,6 +82,7 @@ export function summariseEvent(
   categoryBudgets: Partial<Record<EventCategory, number>>,
   participants: readonly Participant[],
   expenses: readonly EventExpense[],
+  transfers: readonly EventTransfer[] = [],
 ): EventSummary {
   const spent = sum(expenses.map((e) => Number(e.total) || 0));
 
@@ -105,11 +116,15 @@ export function summariseEvent(
       expenses.filter((e) => paidBy(e) === participant.id).map((e) => Number(e.total) || 0),
     );
     const share = shareCents(index) / 100;
+    const sent = sum(transfers.filter((t) => t.from === participant.id).map((t) => t.amount));
+    const received = sum(transfers.filter((t) => t.to === participant.id).map((t) => t.amount));
     return {
       participant,
       paid,
       share,
-      balance: round2(paid - share),
+      sent,
+      received,
+      balance: round2(paid - share + sent - received),
     };
   });
 

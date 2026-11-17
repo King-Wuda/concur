@@ -12,6 +12,7 @@ export function MoneyField({
   onBlur,
   hint,
   action,
+  badge,
 }: {
   id: string;
   label: string;
@@ -20,12 +21,19 @@ export function MoneyField({
   onBlur?: () => void;
   hint?: string;
   action?: { label: string; onClick: () => void };
+  /** A small tag beside the label, e.g. "Trip". */
+  badge?: string;
 }) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-baseline justify-between gap-2">
         <label htmlFor={id} className="text-sm font-medium">
           {label}
+          {badge && (
+            <span className="ml-1.5 rounded bg-sunken px-1.5 py-0.5 text-[0.6875rem] font-medium text-ink-secondary">
+              {badge}
+            </span>
+          )}
         </label>
         {action && (
           <button

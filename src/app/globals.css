@@ -33,6 +33,12 @@
   --series-4: #eda100; /* Subscriptions */
   --series-5: #e87ba4; /* Lily */
   --series-6: #008300; /* Miscellaneous */
+  --series-7: #7c5cd6;
+  --series-8: #0f97b0;
+  --series-9: #a8701c;
+  --series-10: #5b6b82;
+  --series-11: #c4448f;
+  --series-12: #6f8a00;
 
   --good: #0ca30c;
   --good-ink: #006300;
@@ -67,6 +73,12 @@
     --series-4: #c98500;
     --series-5: #d55181;
     --series-6: #008300;
+    --series-7: #9a80ea;
+    --series-8: #2bb0c8;
+    --series-9: #c48a33;
+    --series-10: #8090a8;
+    --series-11: #dc68a8;
+    --series-12: #8fae1a;
 
     --good-ink: #0ca30c;
 
@@ -97,6 +109,12 @@
   --series-4: #c98500;
   --series-5: #d55181;
   --series-6: #008300;
+  --series-7: #9a80ea;
+  --series-8: #2bb0c8;
+  --series-9: #c48a33;
+  --series-10: #8090a8;
+  --series-11: #dc68a8;
+  --series-12: #8fae1a;
 
   --good-ink: #0ca30c;
 

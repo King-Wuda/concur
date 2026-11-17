@@ -39,7 +39,19 @@ export type EventReceipt = {
   line_count: number;
 };
 
+export type TransferRow = {
+  id: string;
+  from: string;
+  to: string;
+  amount: number;
+  date: string;
+  note: string | null;
+};
+
 export type EventDetail = EventRow & {
+  /** The trip's own category in your monthly budget. */
+  category: string | null;
+  transfers: TransferRow[];
   participants: Participant[];
   budgets: Partial<Record<EventCategory, number>>;
   receipts: EventReceipt[];
@@ -72,11 +84,22 @@ const EVENT_SELECT =
   "id, name, start_date, end_date, budget, notes, created_at," +
   " event_participants (id, name, is_me, position)," +
   " event_budgets (category, amount)," +
+  " budget_categories (name)," +
+  " event_transfers (id, from_participant, to_participant, amount, date, note)," +
   " receipts (id, store_name, date, total, category, event_category, paid_by, image_path, month_id, line_items (id))";
 
 type RawEvent = EventRow & {
   event_participants: (Participant & { position: number })[];
   event_budgets: { category: string; amount: number }[];
+  budget_categories: { name: string }[];
+  event_transfers: {
+    id: string;
+    from_participant: string;
+    to_participant: string;
+    amount: number;
+    date: string;
+    note: string | null;
+  }[];
   receipts: (Omit<EventReceipt, "line_count"> & { line_items: { id: string }[] })[];
 };
 
@@ -99,8 +122,21 @@ function shape(raw: RawEvent): EventDetail {
     }))
     .sort((a, b) => b.date.localeCompare(a.date));
 
+  const transfers = (raw.event_transfers ?? [])
+    .map((t) => ({
+      id: t.id,
+      from: t.from_participant,
+      to: t.to_participant,
+      amount: Number(t.amount) || 0,
+      date: t.date,
+      note: t.note,
+    }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+
   const budget = Number(raw.budget) || 0;
   return {
+    category: raw.budget_categories?.[0]?.name ?? null,
+    transfers,
     id: raw.id,
     name: raw.name,
     start_date: raw.start_date,
@@ -111,7 +147,7 @@ function shape(raw: RawEvent): EventDetail {
     participants,
     budgets,
     receipts,
-    summary: summariseEvent(budget, budgets, participants, receipts),
+    summary: summariseEvent(budget, budgets, participants, receipts, transfers),
   };
 }
 

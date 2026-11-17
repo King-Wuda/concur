@@ -445,3 +445,47 @@ test("a month from before the deficit column counts none", () => {
   assert.equal(t.deficit, 0);
   assert.equal(t.remaining, 1_000);
 });
+
+test("your own categories and a trip's sit next to the built-in six", async () => {
+  const { categoryList } = await import("@/lib/categories");
+  const categories = categoryList([
+    { name: "Gifts", event_id: null },
+    { name: "Cape Town trip", event_id: "e1" },
+  ]);
+  const analysis = analyseMonth(
+    snapshot({
+      categories,
+      budgets: [budget("Gifts" as Category, 500), budget("Cape Town trip" as Category, 2500)],
+      receipts: [
+        receipt("r1", 250, "Gifts" as Category, []),
+        receipt("r2", 3000, "Cape Town trip" as Category, []),
+      ],
+      // Thabo sent you R1 000 towards the R3 000 you paid on the trip.
+      transfers: [{ amount: 1000, category: "Cape Town trip", direction: "in" }],
+    }),
+  );
+  assert.equal(analysis.categories.length, 8);
+  assert.equal(actualFor(analysis, "Gifts" as Category), 250);
+  // The trip shows what it really cost you.
+  assert.equal(actualFor(analysis, "Cape Town trip" as Category), 2000);
+  assert.equal(analysis.totals.totalSpend, 2250);
+  const trip = analysis.categories.find((c) => c.category === "Cape Town trip")!;
+  assert.equal(trip.kind, "trip");
+  assert.equal(trip.isOver, false);
+});
+
+test("money you send on a trip counts as spending under it", () => {
+  const analysis = analyseMonth(
+    snapshot({
+      transfers: [{ amount: 400, category: "Miscellaneous", direction: "out" }],
+    }),
+  );
+  assert.equal(actualFor(analysis, "Miscellaneous"), 400);
+});
+
+test("a category since removed still shows the money filed under it", () => {
+  const analysis = analyseMonth(
+    snapshot({ receipts: [receipt("r1", 80, "Old one" as Category, [])] }),
+  );
+  assert.equal(actualFor(analysis, "Old one" as Category), 80);
+});

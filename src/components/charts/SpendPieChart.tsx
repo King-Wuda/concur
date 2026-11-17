@@ -3,7 +3,6 @@
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 
 import type { CategoryTotal } from "@/lib/aggregate";
-import { CATEGORY_COLOR_VAR } from "@/lib/categories";
 import { formatRand } from "@/lib/money";
 
 /**
@@ -50,7 +49,7 @@ export function SpendPieChart({ categories }: { categories: CategoryTotal[] }) {
               {slices.map((category) => (
                 <Cell
                   key={category.category}
-                  fill={CATEGORY_COLOR_VAR[category.category]}
+                  fill={category.color}
                 />
               ))}
             </Pie>
@@ -73,7 +72,7 @@ export function SpendPieChart({ categories }: { categories: CategoryTotal[] }) {
             <span
               aria-hidden
               className="size-2.5 shrink-0 rounded-sm"
-              style={{ background: CATEGORY_COLOR_VAR[category.category] }}
+              style={{ background: category.color }}
             />
             <span className="truncate">{category.category}</span>
             <span
@@ -121,7 +120,7 @@ function SliceTooltip({
         <span
           aria-hidden
           className="size-2.5 rounded-sm"
-          style={{ background: CATEGORY_COLOR_VAR[slice.category] }}
+          style={{ background: slice.color }}
         />
         {slice.category}
       </div>

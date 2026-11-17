@@ -6,6 +6,7 @@ import { IncomeForm } from "@/components/IncomeForm";
 import { ManualExpense } from "@/components/ManualExpense";
 import { ReceiptCapture } from "@/components/ReceiptCapture";
 import { BudgetCalendar } from "@/components/BudgetCalendar";
+import { CategoryOptions } from "@/components/CategoriesContext";
 import { TripProvider, type Trip } from "@/components/TripContext";
 import type { MonthKey } from "@/lib/month";
 import type { MonthStart } from "@/lib/period";
@@ -33,6 +34,7 @@ export function AddExpense({
   userId,
   starts,
   trip = null,
+  intoCategory = null,
 }: {
   monthKey: MonthKey;
   userId: string;
@@ -40,8 +42,11 @@ export function AddExpense({
   starts: MonthStart[];
   /** Adding receipts to this trip or event; money in does not apply there. */
   trip?: Trip | null;
+  /** Start with scanned receipts going into this category. */
+  intoCategory?: string | null;
 }) {
   const [mode, setMode] = useState<Mode>("scan");
+  const [into, setInto] = useState<string | null>(intoCategory);
   const [visited, setVisited] = useState<Mode[]>(["scan"]);
 
   function choose(next: Mode) {
@@ -82,7 +87,23 @@ export function AddExpense({
           discard a draft - or a receipt already uploaded and read. */}
           {visited.includes("scan") && (
             <div hidden={mode !== "scan"}>
-              <ReceiptCapture monthKey={monthKey} userId={userId} />
+              {!trip && (
+                <div className="mx-auto mb-4 flex max-w-lg items-center gap-2">
+                  <label htmlFor="scan-into" className="shrink-0 text-sm font-medium">
+                    Put these in
+                  </label>
+                  <select
+                    id="scan-into"
+                    className="field"
+                    value={into ?? ""}
+                    onChange={(e) => setInto(e.target.value || null)}
+                  >
+                    <option value="">The category the reader picks</option>
+                    <CategoryOptions current={into ?? undefined} />
+                  </select>
+                </div>
+              )}
+              <ReceiptCapture monthKey={monthKey} userId={userId} intoCategory={into} />
             </div>
           )}
           {visited.includes("manual") && (
